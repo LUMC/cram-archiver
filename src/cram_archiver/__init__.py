@@ -25,3 +25,23 @@ def convert_to_cram(
     if write_index:
         command.append("--write-index")
     subprocess.run(command, check=True)
+
+
+def checksum(input_file: str, reference: str, threads: int = 1):
+    additional_threads = max(0, threads - 1)
+    result = subprocess.run(
+        [
+            "samtools",
+            "checksum",
+            "--all",
+            "--threads", str(additional_threads),
+            "--reference", reference,
+            input_file
+        ],
+        check=True,
+        stdout=subprocess.PIPE)
+    lines = [line for line in
+             result.stdout.decode("ascii").splitlines(keepends=True)
+             if not line.startswith("#")
+         ]
+    return "".join(lines)
