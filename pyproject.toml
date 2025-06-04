@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name="cram-converter"
-description="Samtools wrapping service for automated CRAM conversion."
+name="cram-archiver"
+description="Samtools wrapper for archiving BAM files safely to CRAM"
 readme = "README.rst"
 requires-python = ">=3.10"
 
@@ -14,8 +14,7 @@ authors = [
 dynamic = ["version"]
 
 [project.scripts]
-cram-converter = "cram_converter.__main__:main"
-cram-converter-service = "cram_converter_service.__main__:main"
+cram-archiver = "cram_archiver.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
