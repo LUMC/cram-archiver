@@ -5,8 +5,9 @@ application.
 import gzip
 import io
 import struct
+import subprocess
 import sys
-from typing import BinaryIO, TextIO
+from typing import TextIO
 
 METHOD_RAW = 0
 METHOD_GZIP = 1
@@ -51,7 +52,7 @@ class ReferenceID:
             magic = filehandle.peek(100)
             text_handle = io.TextIOWrapper(filehandle)
             if magic.startswith(b"CRAM"):
-                return cls._from_cram(filehandle)
+                return cls._from_alignment_file(file)
             elif magic.startswith(b"@HD"):
                 return cls._from_sam_header(text_handle)
             elif magic.startswith(b"BAM\x01"):
@@ -76,6 +77,12 @@ class ReferenceID:
             raise NotImplementedError(f"file with magic {magic[:10]!r} not "
                                       f"implemented.")
     @classmethod
+    def _from_alignment_file(cls, alignment_file):
+        result = subprocess.run(["samtools", "view", "-H", alignment_file],
+                       stdout=subprocess.PIPE, check=True)
+        return cls._from_sam_header(io.StringIO(result.stdout.decode('ascii')))
+
+    @classmethod
     def _from_sam_header(cls, filehandle: TextIO):
         """Parses the contigs and lengths from SAM header @SQ lines."""
         id_build = io.StringIO()
@@ -93,43 +100,6 @@ class ReferenceID:
         return cls(id_build.getvalue())
 
     @classmethod
-    def _from_cram(cls, filehandle: BinaryIO):
-        format = filehandle.read(4)
-        if format != b"CRAM":
-            raise ValueError(f"Invalid CRAM magic {format}")
-        major, minor = struct.unpack("BB", filehandle.read(2))
-        if major != 3:
-            raise ValueError(
-                f"Only CRAM versions in the 3.x range are supported, "
-                f"got {major}.{minor}")
-        file_id = filehandle.read(20)
-        container_length, = struct.unpack("<i", filehandle.read(4))
-        ref_seq_id = _ITF8_from_stream(filehandle)
-        starting_position = _ITF8_from_stream(filehandle)
-        number_of_records = _ITF8_from_stream(filehandle)
-        record_counter = _LTF8_from_stream(filehandle)
-        bases = _LTF8_from_stream(filehandle)
-        number_of_blocks = _ITF8_from_stream(filehandle)
-        landmark_count = _ITF8_from_stream(filehandle)
-        for _ in range(landmark_count):
-            landmark_position = _ITF8_from_stream(filehandle)
-        crc = filehandle.read(4)
-        method = filehandle.read(1)[0]
-        if method != METHOD_RAW or method != METHOD_GZIP:
-            raise ValueError("Header block must be raw or gzip compressed")
-        block_content_type_id = filehandle.read(1)[0]
-        if block_content_type_id != 0:
-            raise ValueError("Header block must be of type FILE_HEADER")
-        compressed_size = _ITF8_from_stream(filehandle)
-        raw_size = _ITF8_from_stream(filehandle)
-        block = filehandle.read(compressed_size)
-        if method == 1:
-            block = gzip.decompress(block)
-        header_size, = struct.unpack("<I", block[:4])
-        header = block[4: 4+header_size].decode("utf-8")
-        return cls._from_sam_header(io.StringIO(header))
-
-    @classmethod
     def _from_fasta_index(cls, filehandle: TextIO):
         """Parses the contigs and lengths from the fasta index tabular format."""
         id_build = io.StringIO()
@@ -137,49 +107,6 @@ class ReferenceID:
             contig, contig_length, *rest = line.split()
             id_build.write(f"{contig}\t{contig_length}\n")
         return cls(id_build.getvalue())
-
-
-def _ITF8_from_stream(stream: BinaryIO) -> int:
-    """Get ITF-8 value from stream. Based on the htslib code."""
-    value_mask = 0b0111_1111
-    count_mask = 0b1000_0000
-    following_bytes = 0
-    b = stream.read(1)[0]
-    for _ in range(4):
-        if b & count_mask:
-            count_mask >>= 1
-            value_mask >>= 1
-            following_bytes += 1
-    value = b & value_mask
-    for _ in range(following_bytes):
-        b = stream.read(1)[0]
-        value = value << 8 | b
-    if following_bytes == 4:
-        value = (value >> 4) | (value & 0b000_1111)
-    if value & 0x80_00_00_00:
-        # Perform two's complement
-        return - (((~value) + 1) & 0xffff_ffff)
-    return value
-
-
-def _LTF8_from_stream(stream: BinaryIO):
-    value_mask = 0b0111_1111
-    count_mask = 0b1000_0000
-    following_bytes = 0
-    b = stream.read(1)[0]
-    for _ in range(8):
-        if b & count_mask:
-            count_mask >>= 1
-            value_mask >>= 1
-            following_bytes += 1
-    value = b & value_mask
-    for _ in range(following_bytes):
-        b = stream.read(1)[0]
-        value = value << 8 | b
-    if value & 0x8000_0000_0000_0000:
-        # Perform two's complement
-        return - (((~value) + 1) & 0xfffff_fffff_ffff_ffff)
-    return value
 
 
 if __name__ == "__main__":
