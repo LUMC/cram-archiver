@@ -5,8 +5,11 @@ application.
 import gzip
 import io
 import struct
+import sys
 from typing import BinaryIO, TextIO
 
+METHOD_RAW = 0
+METHOD_GZIP = 1
 
 class ReferenceID:
     """
@@ -89,6 +92,7 @@ class ReferenceID:
                 id_build.write(f"{contig}\t{contig_length}\n")
         return cls(id_build.getvalue())
 
+    @classmethod
     def _from_cram(cls, filehandle: BinaryIO):
         format = filehandle.read(4)
         if format != b"CRAM":
@@ -99,7 +103,31 @@ class ReferenceID:
                 f"Only CRAM versions in the 3.x range are supported, "
                 f"got {major}.{minor}")
         file_id = filehandle.read(20)
-
+        container_length, = struct.unpack("<i", filehandle.read(4))
+        ref_seq_id = _ITF8_from_stream(filehandle)
+        starting_position = _ITF8_from_stream(filehandle)
+        number_of_records = _ITF8_from_stream(filehandle)
+        record_counter = _LTF8_from_stream(filehandle)
+        bases = _LTF8_from_stream(filehandle)
+        number_of_blocks = _ITF8_from_stream(filehandle)
+        landmark_count = _ITF8_from_stream(filehandle)
+        for _ in range(landmark_count):
+            landmark_position = _ITF8_from_stream(filehandle)
+        crc = filehandle.read(4)
+        method = filehandle.read(1)[0]
+        if method != METHOD_RAW or method != METHOD_GZIP:
+            raise ValueError("Header block must be raw or gzip compressed")
+        block_content_type_id = filehandle.read(1)[0]
+        if block_content_type_id != 0:
+            raise ValueError("Header block must be of type FILE_HEADER")
+        compressed_size = _ITF8_from_stream(filehandle)
+        raw_size = _ITF8_from_stream(filehandle)
+        block = filehandle.read(compressed_size)
+        if method == 1:
+            block = gzip.decompress(block)
+        header_size, = struct.unpack("<I", block[:4])
+        header = block[4: 4+header_size].decode("utf-8")
+        return cls._from_sam_header(io.StringIO(header))
 
     @classmethod
     def _from_fasta_index(cls, filehandle: TextIO):
@@ -111,52 +139,49 @@ class ReferenceID:
         return cls(id_build.getvalue())
 
 
-def _itf_8_from_stream(stream: BinaryIO) -> int:
+def _ITF8_from_stream(stream: BinaryIO) -> int:
     """Get ITF-8 value from stream. Based on the htslib code."""
-
-    start_to_nbytes = [
-        0,  # 0b0000xxxx
-        0,  # 0b0001xxxx
-        0,  # 0b0010xxxx
-        0,  # 0b0011xxxx
-        0,  # 0b0100xxxx
-        0,  # 0b0101xxxx
-        0,  # 0b0110xxxx
-        0,  # 0b0111xxxx
-        1,  # 0b1000xxxx
-        1,  # 0b1001xxxx
-        1,  # 0b1010xxxx
-        1,  # 0b1011xxxx
-        2,  # 0b1100xxxx
-        2,  # 0b1101xxxx
-        3,  # 0b1110xxxx
-        4,  # 0b1111xxxx
-    ]
-
-    value_masks = [
-        0b0111_1111,
-        0b0011_1111,
-        0b0001_1111,
-        0b0000_1111,
-        0b0000_1111,
-    ]
-
+    value_mask = 0b0111_1111
+    count_mask = 0b1000_0000
+    following_bytes = 0
     b = stream.read(1)[0]
-    nbytes = start_to_nbytes[b >> 4]
-    value = b & value_masks[nbytes]
-    if nbytes == 0:
-        return value
-    elif nbytes == 1:
-        return value << 8 | stream.read(1)[0]
-    elif nbytes == 2:
-        c = stream.read(2)
-        return value << 16 | c[0] << 8 | c[1]
-    elif nbytes == 3:
-        c = stream.read(3)
-        return value << 24 | c[0] << 16 | c[1] << 8 | c[2]
-    c = stream.read(4)
-    value = value << 28 | c[0] << 20 | c[1] << 12 | c[2] << 2 | c[3] & 0b0000_1111
+    for _ in range(4):
+        if b & count_mask:
+            count_mask >>= 1
+            value_mask >>= 1
+            following_bytes += 1
+    value = b & value_mask
+    for _ in range(following_bytes):
+        b = stream.read(1)[0]
+        value = value << 8 | b
+    if following_bytes == 4:
+        value = (value >> 4) | (value & 0b000_1111)
     if value & 0x80_00_00_00:
         # Perform two's complement
         return - (((~value) + 1) & 0xffff_ffff)
     return value
+
+
+def _LTF8_from_stream(stream: BinaryIO):
+    value_mask = 0b0111_1111
+    count_mask = 0b1000_0000
+    following_bytes = 0
+    b = stream.read(1)[0]
+    for _ in range(8):
+        if b & count_mask:
+            count_mask >>= 1
+            value_mask >>= 1
+            following_bytes += 1
+    value = b & value_mask
+    for _ in range(following_bytes):
+        b = stream.read(1)[0]
+        value = value << 8 | b
+    if value & 0x8000_0000_0000_0000:
+        # Perform two's complement
+        return - (((~value) + 1) & 0xfffff_fffff_ffff_ffff)
+    return value
+
+
+if __name__ == "__main__":
+    file = sys.argv[1]
+    print(ReferenceID.from_file(file).id)
