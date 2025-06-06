@@ -9,8 +9,6 @@ import subprocess
 import sys
 from typing import TextIO
 
-METHOD_RAW = 0
-METHOD_GZIP = 1
 
 class ReferenceID:
     """
