@@ -2,8 +2,9 @@ import argparse
 import logging
 import os
 import subprocess
+import time
 from pathlib import Path
-from typing import Dict, Sequence
+from typing import Dict, Sequence, Iterator
 
 from .references import ReferenceID
 
@@ -13,6 +14,7 @@ DEFAULT_THREADS = 1
 DEFAULT_WRITE_INDEX = True
 DEFAULT_WRITE_CHECKSUM_FILES = True
 DEFAULT_LOG_LEVEL = logging.WARNING
+DEFAULT_MINIMUM_AGE_DAYS = 0
 
 def convert_to_cram(
         input_file: str,
@@ -93,13 +95,22 @@ def convert_to_cram_and_check(
     return output_file
 
 
-def find_bam_files(input_dir: str):
+def handle_file_age(file, file_mtime: float, older_than_timestamp: float
+                    ) -> Iterator[str]:
+    if file_mtime < older_than_timestamp:
+        yield file
+    else:
+        logging.info(f"Skipping too new file: {file}.")
+
+
+def find_bam_files(input_dir: str, older_than_timestamp: float=time.time()
+                   ) -> Iterator[str]:
     for entry in os.scandir(input_dir):
         logging.debug(f"Searching: {entry.path}")
         if entry.is_file():
             if entry.name.endswith(".bam"):
-                yield entry.path
-        elif entry.is_dir():
+                yield from handle_file_age(
+                    entry.path, entry.stat().st_mtime, older_than_timestamp)
             yield from find_bam_files(entry.path)
 
 
@@ -111,7 +122,10 @@ def cram_archiver(
         write_index: bool = DEFAULT_WRITE_INDEX,
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
         log_level: int = DEFAULT_LOG_LEVEL,
+        minimum_age_days: int = 0,
 ):
+
+    older_than_timestamp = time.time() - (minimum_age_days * 24 * 60 * 60)
     logger = logging.getLogger()
     logger.setLevel(log_level)
     console_handler = logging.StreamHandler()
@@ -133,9 +147,10 @@ def cram_archiver(
         ref_dicts[ref_id] = reference
 
     if os.path.isfile(input_path):
-        bam_files = [input_path]
+        bam_files = list(handle_file_age(
+            input_path, os.stat(input_path).st_mtime, older_than_timestamp))
     else:
-        bam_files = list(find_bam_files(input_path))
+        bam_files = list(find_bam_files(input_path, older_than_timestamp))
     logging.info(f"Found {len(bam_files)} BAM files.")
     logging.debug(f"Found {', '.join(bam_files)}.")
     if len(bam_files) == 0:
@@ -170,6 +185,14 @@ def argument_parser() -> argparse.ArgumentParser:
              f"Default: {DEFAULT_THREADS}."
     )
     parser.add_argument(
+        "-d", "--minimum-age-days", type="int",
+        default=DEFAULT_MINIMUM_AGE_DAYS,
+        help=f"The minimum last modification of the BAM file in days prior. "
+             f"This assumes the system clock timezone matches that of the "
+             f"file while also assuming that every day has 24x60x60 seconds. "
+             f"Default {DEFAULT_MINIMUM_AGE_DAYS}",
+    )
+    parser.add_argument(
         "--cram-version", default=DEFAULT_CRAM_VERSION,
         help="CRAM version to use for CRAM conversion. "
              f"Default: {DEFAULT_CRAM_VERSION}."
@@ -198,4 +221,5 @@ def cram_archiver_main(*args):
         write_index=arg.write_index,
         write_checksum_files=arg.write_checksums,
         log_level=log_level,
+        minimum_age_days=arg.minimum_age_days,
     )
