@@ -151,18 +151,15 @@ def cram_archiver(
         ref_dicts[ref_id] = reference
 
     if os.path.isfile(input_path):
-        bam_files = list(handle_file_age(
-            input_path, os.stat(input_path).st_mtime, older_than_timestamp))
+        bam_files = handle_file_age(
+            input_path, os.stat(input_path).st_mtime, older_than_timestamp)
     else:
-        bam_files = list(find_bam_files(input_path, older_than_timestamp))
+        bam_files = find_bam_files(input_path, older_than_timestamp)
     logging.info(f"Found {len(bam_files)} BAM files.")
     logging.debug(f"Found {', '.join(bam_files)}.")
-    if len(bam_files) == 0:
-        logging.warning("No BAM files found. Exiting.")
-        return
-
+    number_of_bam_files = 0
     errors = []
-    for bam in bam_files:
+    for number_of_bam_files, bam in enumerate(bam_files, start=1):
         try:
             convert_to_cram_and_check(
                 input_file=bam,
@@ -179,6 +176,8 @@ def cram_archiver(
         except (FileNotFoundError, RuntimeError) as error:
             logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
             errors.append(error)
+    if number_of_bam_files == 0:
+        logging.warning("No BAM files found. Exiting.")
     if errors:
         raise RuntimeError("Errors occured during conversions.")
 
