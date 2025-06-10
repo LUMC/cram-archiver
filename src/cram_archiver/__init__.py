@@ -123,8 +123,12 @@ def cram_archiver(
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
         log_level: int = DEFAULT_LOG_LEVEL,
         minimum_age_days: int = 0,
+        delete: bool = False,
 ):
-
+    if delete:
+        logging.warning(
+            "WARNING: BAM FILES WILL BE DELETED AFTER SUCCESSFUL CONVERSION!!!"
+        )
     older_than_timestamp = time.time() - (minimum_age_days * 24 * 60 * 60)
     logger = logging.getLogger()
     logger.setLevel(log_level)
@@ -158,18 +162,22 @@ def cram_archiver(
         return
 
     errors = []
-    for file in bam_files:
+    for bam in bam_files:
         try:
             convert_to_cram_and_check(
-                input_file=file,
+                input_file=bam,
                 reference_id_to_path=ref_dicts,
                 threads=threads,
                 cram_version=cram_version,
                 write_index=write_index,
                 write_checksum_files=write_checksum_files,
             )
+            if delete:
+                logging.info(
+                    f"Conversion successfull, deleting BAM file: {bam}")
+                os.unlink(bam)
         except (FileNotFoundError, RuntimeError) as error:
-            logging.error(f"Conversion unsuccessful: {file}. {str(error)}")
+            logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
             errors.append(error)
     if errors:
         raise RuntimeError("Errors occured during conversions.")
@@ -198,6 +206,10 @@ def argument_parser() -> argparse.ArgumentParser:
              f"This assumes the system clock timezone matches that of the "
              f"file while also assuming that every day has 24x60x60 seconds. "
              f"Default {DEFAULT_MINIMUM_AGE_DAYS}.",
+    )
+    parser.add_argument(
+        "--delete", action="store_true",
+        help="Delete BAM files after successful conversion."
     )
     parser.add_argument(
         "--cram-version", default=DEFAULT_CRAM_VERSION,
@@ -229,4 +241,5 @@ def cram_archiver_main(*args):
         write_checksum_files=arg.write_checksums,
         log_level=log_level,
         minimum_age_days=arg.minimum_age_days,
+        delete=arg.delete,
     )
