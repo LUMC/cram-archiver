@@ -111,7 +111,8 @@ def find_bam_files(input_dir: str, older_than_timestamp: float=time.time()
             if entry.name.endswith(".bam"):
                 yield from handle_file_age(
                     entry.path, entry.stat().st_mtime, older_than_timestamp)
-            yield from find_bam_files(entry.path)
+        elif entry.is_dir():
+            yield from find_bam_files(entry.path, older_than_timestamp)
 
 
 def cram_archiver(
@@ -132,6 +133,7 @@ def cram_archiver(
         )
     older_than_timestamp = time.time() - (minimum_age_days * 24 * 60 * 60)
     logger = logging.getLogger()
+    logger.name = "cram-archiver"
     logger.setLevel(log_level)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(log_level)
@@ -156,8 +158,7 @@ def cram_archiver(
             input_path, os.stat(input_path).st_mtime, older_than_timestamp)
     else:
         bam_files = find_bam_files(input_path, older_than_timestamp)
-    logging.info(f"Found {len(bam_files)} BAM files.")
-    logging.debug(f"Found {', '.join(bam_files)}.")
+
     number_of_bam_files = 0
     errors = []
     for number_of_bam_files, bam in enumerate(bam_files, start=1):
@@ -231,14 +232,14 @@ def argument_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true",
         help="Print the paths of the to be archived BAM files. Perform no actions."
     )
-    parser.add_argument("-v", "--verbose", action="count")
-    parser.add_argument("-q", "--quiet", action="count")
+    parser.add_argument("-v", "--verbose", action="count", default=0)
+    parser.add_argument("-q", "--quiet", action="count", default=0)
     return parser
 
 
 def cram_archiver_main(*args):
     arg = argument_parser().parse_args(args or None)
-    log_level = (arg.verbose - arg.quiet) * 10 + DEFAULT_LOG_LEVEL
+    log_level = (arg.quiet - arg.verbose) * 10 + DEFAULT_LOG_LEVEL
     cram_archiver(
         input_path=arg.path,
         reference_files=arg.reference,
