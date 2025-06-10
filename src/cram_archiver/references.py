@@ -74,10 +74,11 @@ class ReferenceID:
                     return cls._from_fasta_index(text_handle)
             raise NotImplementedError(f"file with magic {magic[:10]!r} not "
                                       f"implemented.")
+
     @classmethod
     def _from_alignment_file(cls, alignment_file):
         result = subprocess.run(["samtools", "view", "-H", alignment_file],
-                       stdout=subprocess.PIPE, check=True)
+                                stdout=subprocess.PIPE, check=True)
         return cls._from_sam_header(io.StringIO(result.stdout.decode('ascii')))
 
     @classmethod

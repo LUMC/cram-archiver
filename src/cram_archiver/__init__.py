@@ -4,7 +4,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Sequence, Iterator
+from typing import Dict, Iterator, Sequence
 
 from .references import ReferenceID
 
@@ -15,6 +15,7 @@ DEFAULT_WRITE_INDEX = True
 DEFAULT_WRITE_CHECKSUM_FILES = True
 DEFAULT_LOG_LEVEL = logging.WARNING
 DEFAULT_MINIMUM_AGE_DAYS = 0
+
 
 def convert_to_cram(
         input_file: str,
@@ -103,7 +104,7 @@ def handle_file_age(file, file_mtime: float, older_than_timestamp: float
         logging.info(f"Skipping too new file: {file}.")
 
 
-def find_bam_files(input_dir: str, older_than_timestamp: float=time.time()
+def find_bam_files(input_dir: str, older_than_timestamp: float = time.time()
                    ) -> Iterator[str]:
     for entry in os.scandir(input_dir):
         logging.debug(f"Searching: {entry.path}")
