@@ -180,17 +180,17 @@ def argument_parser() -> argparse.ArgumentParser:
              "times. Reference will be checked with the BAM file."
     )
     parser.add_argument(
-        "-t", "--threads", type="int", default=DEFAULT_THREADS,
+        "-t", "--threads", type=int, default=DEFAULT_THREADS,
         help=f"The number of threads used for conversion and checksumming."
              f"Default: {DEFAULT_THREADS}."
     )
     parser.add_argument(
-        "-d", "--minimum-age-days", type="int",
+        "-d", "--minimum-age-days", type=int,
         default=DEFAULT_MINIMUM_AGE_DAYS,
         help=f"The minimum last modification of the BAM file in days prior. "
              f"This assumes the system clock timezone matches that of the "
              f"file while also assuming that every day has 24x60x60 seconds. "
-             f"Default {DEFAULT_MINIMUM_AGE_DAYS}",
+             f"Default {DEFAULT_MINIMUM_AGE_DAYS}.",
     )
     parser.add_argument(
         "--cram-version", default=DEFAULT_CRAM_VERSION,
@@ -198,11 +198,11 @@ def argument_parser() -> argparse.ArgumentParser:
              f"Default: {DEFAULT_CRAM_VERSION}."
     )
     parser.add_argument(
-        "--dont-write-checksums", type="store_false", dest="write_checksums",
+        "--dont-write-checksums", action="store_false", dest="write_checksums",
         help="Do not store samtools checksum output on disk."
     )
     parser.add_argument(
-        "--dont-write-index", type="store_false", dest="write_index",
+        "--dont-write-index", action="store_false", dest="write_index",
         help="Do not write index files for CRAM files."
     )
     parser.add_argument("-v", "--verbose", action="count")
