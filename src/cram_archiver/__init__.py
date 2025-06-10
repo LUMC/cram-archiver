@@ -157,15 +157,22 @@ def cram_archiver(
         logging.warning("No BAM files found. Exiting.")
         return
 
+    errors = []
     for file in bam_files:
-        convert_to_cram_and_check(
-            input_file=file,
-            reference_id_to_path=ref_dicts,
-            threads=threads,
-            cram_version=cram_version,
-            write_index=write_index,
-            write_checksum_files=write_checksum_files,
-        )
+        try:
+            convert_to_cram_and_check(
+                input_file=file,
+                reference_id_to_path=ref_dicts,
+                threads=threads,
+                cram_version=cram_version,
+                write_index=write_index,
+                write_checksum_files=write_checksum_files,
+            )
+        except (FileNotFoundError, RuntimeError) as error:
+            logging.error(f"Conversion unsuccessful: {file}. {str(error)}")
+            errors.append(error)
+    if errors:
+        raise RuntimeError("Errors occured during conversions.")
 
 
 def argument_parser() -> argparse.ArgumentParser:
