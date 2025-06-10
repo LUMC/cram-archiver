@@ -75,7 +75,7 @@ def checksum(input_file: str, reference: str, threads: int = 1) -> str:
 def strip_comments_from_checksum(checksum: str) -> str:
     return "".join(
         line for line in checksum.splitlines(keepends=True)
-        if not line.startswith("#")
+        if not (line.startswith("#") or line == "\n")
     )
 
 
@@ -89,7 +89,7 @@ def convert_to_cram_and_check(
 ) -> str:
     reference_id = ReferenceID.from_file(input_file)
     reference = reference_id_to_path[reference_id]
-    output_file = str(Path(input_file).stem) + ".cram"
+    output_file = str(Path(input_file).parent / Path(input_file).stem) + ".cram"
     logging.info(f"Convert '{input_file}' to '{output_file}'.")
     convert_to_cram(input_file, output_file, reference, threads, cram_version,
                     write_index)
