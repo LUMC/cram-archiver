@@ -124,8 +124,9 @@ def cram_archiver(
         log_level: int = DEFAULT_LOG_LEVEL,
         minimum_age_days: int = 0,
         delete: bool = False,
+        dry_run: bool = True,
 ):
-    if delete:
+    if delete and not dry_run:
         logging.warning(
             "WARNING: BAM FILES WILL BE DELETED AFTER SUCCESSFUL CONVERSION!!!"
         )
@@ -160,6 +161,9 @@ def cram_archiver(
     number_of_bam_files = 0
     errors = []
     for number_of_bam_files, bam in enumerate(bam_files, start=1):
+        if dry_run:
+            print(bam)
+            continue
         try:
             convert_to_cram_and_check(
                 input_file=bam,
@@ -223,6 +227,10 @@ def argument_parser() -> argparse.ArgumentParser:
         "--dont-write-index", action="store_false", dest="write_index",
         help="Do not write index files for CRAM files."
     )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Print the paths of the to be archived BAM files. Perform no actions."
+    )
     parser.add_argument("-v", "--verbose", action="count")
     parser.add_argument("-q", "--quiet", action="count")
     return parser
@@ -241,4 +249,5 @@ def cram_archiver_main(*args):
         log_level=log_level,
         minimum_age_days=arg.minimum_age_days,
         delete=arg.delete,
+        dry_run=arg.dry_run,
     )
