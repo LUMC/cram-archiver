@@ -13,3 +13,19 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with cram-archiver. If not, see <https://www.gnu.org/licenses/
+from pathlib import Path
+
+from cram_archiver import checksum
+
+TEST_DATA = Path(__file__).parent / "data"
+
+
+def test_checksum():
+    bam = str(TEST_DATA / "GM24385_1.bam")
+    sum = checksum(bam, str(TEST_DATA / "NC012920.1.fasta"))
+    assert (
+        "all        all           178  06d90a04  526c1585  3e8f585f  "
+        "41c54f43  268b6cbb  1ff11ae8  35f542f6  56a9ac23\n"
+        "GM24385_fastq-lib1-fastq all           178  06d90a04  526c1585  "
+        "3e8f585f  41c54f43  268b6cbb  1ff11ae8  35f542f6  56a9ac23\n"
+    ) in sum

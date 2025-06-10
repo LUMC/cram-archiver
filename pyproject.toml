@@ -34,7 +34,6 @@ cram-archiver = "cram_archiver.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[project.urls]
 [tool.setuptools_scm]
 
 [project.urls]
