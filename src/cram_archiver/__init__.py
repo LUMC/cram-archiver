@@ -1,13 +1,18 @@
+import argparse
+import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Sequence
 
 from .references import ReferenceID
 
 # 3.1 Not supported by some tools currently (2025)
 DEFAULT_CRAM_VERSION = "3.0"
-
+DEFAULT_THREADS = 1
+DEFAULT_WRITE_INDEX = True
+DEFAULT_WRITE_CHECKSUM_FILES = True
+DEFAULT_LOG_LEVEL = logging.WARNING
 
 def convert_to_cram(
         input_file: str,
@@ -15,7 +20,7 @@ def convert_to_cram(
         reference: str,
         threads: int = 1,
         cram_version: str = DEFAULT_CRAM_VERSION,
-        write_index: bool = True,
+        write_index: bool = DEFAULT_WRITE_INDEX,
 ):
     additional_threads = max(0, threads - 1)
     command = [
@@ -28,6 +33,7 @@ def convert_to_cram(
     ]
     if write_index:
         command.append("--write-index")
+    logging.debug(f"Conversion command: '{' '.join(command)}'")
     subprocess.run(command, check=True)
 
 
@@ -56,15 +62,16 @@ def strip_comments_from_checksum(checksum: str) -> str:
 
 def convert_to_cram_and_check(
         input_file: str,
-        reference_files: Dict[ReferenceID, str],
-        threads: int = 1,
+        reference_id_to_path: Dict[ReferenceID, str],
+        threads: int = DEFAULT_THREADS,
         cram_version: str = DEFAULT_CRAM_VERSION,
-        write_index: bool = True,
-        write_checksum_files: bool = True,
-):
+        write_index: bool = DEFAULT_WRITE_INDEX,
+        write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
+) -> str:
     reference_id = ReferenceID.from_file(input_file)
-    reference = reference_files[reference_id]
+    reference = reference_id_to_path[reference_id]
     output_file = str(Path(input_file).stem) + ".cram"
+    logging.info(f"Convert '{input_file}' to '{output_file}'.")
     convert_to_cram(input_file, output_file, reference, threads, cram_version,
                     write_index)
     input_checksum = checksum(input_file, reference, threads)
@@ -83,3 +90,112 @@ def convert_to_cram_and_check(
             f"Input checksum does not match output checksum for {input_file} "
             f"and {output_file}.\n'{input_checksum!r}' != {output_checksum!r}.\n"
             f"{output_file} is removed.")
+    return output_file
+
+
+def find_bam_files(input_dir: str):
+    for entry in os.scandir(input_dir):
+        logging.debug(f"Searching: {entry.path}")
+        if entry.is_file():
+            if entry.name.endswith(".bam"):
+                yield entry.path
+        elif entry.is_dir():
+            yield from find_bam_files(entry.path)
+
+
+def cram_archiver(
+        input_path: str,
+        reference_files: Sequence[str],
+        threads: int = DEFAULT_THREADS,
+        cram_version: str = DEFAULT_CRAM_VERSION,
+        write_index: bool = DEFAULT_WRITE_INDEX,
+        write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
+        log_level: int = DEFAULT_LOG_LEVEL,
+):
+    logger = logging.getLogger()
+    logger.setLevel(log_level)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    formatter = logging.Formatter(
+        "{name}:{asctime}:{levelname}: {message}",
+        datefmt="%m/%d/%Y %I:%M:%S",
+        style="{")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    ref_dicts: Dict[ReferenceID, str] = {}
+    for reference in reference_files:
+        fai = reference + ".fai"
+        if not os.path.exists(fai):
+            raise FileNotFoundError(
+                f"Fasta index file for {reference} could not be found.")
+        ref_id = ReferenceID.from_file(fai)
+        ref_dicts[ref_id] = reference
+
+    if os.path.isfile(input_path):
+        bam_files = [input_path]
+    else:
+        bam_files = list(find_bam_files(input_path))
+    logging.info(f"Found {len(bam_files)} BAM files.")
+    logging.debug(f"Found {', '.join(bam_files)}.")
+    if len(bam_files) == 0:
+        logging.warning("No BAM files found. Exiting.")
+        return
+
+    for file in bam_files:
+        convert_to_cram_and_check(
+            input_file=file,
+            reference_id_to_path=ref_dicts,
+            threads=threads,
+            cram_version=cram_version,
+            write_index=write_index,
+            write_checksum_files=write_checksum_files,
+        )
+
+
+def argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "path", metavar="PATH",
+        help="Path to BAM file or directory to be recursively searched."
+    )
+    parser.add_argument(
+        "-r", "--reference", action="append", required=True,
+        help="Reference to be used for CRAM conversion. Can be used multiple "
+             "times. Reference will be checked with the BAM file."
+    )
+    parser.add_argument(
+        "-t", "--threads", type="int", default=DEFAULT_THREADS,
+        help=f"The number of threads used for conversion and checksumming."
+             f"Default: {DEFAULT_THREADS}."
+    )
+    parser.add_argument(
+        "--cram-version", default=DEFAULT_CRAM_VERSION,
+        help="CRAM version to use for CRAM conversion. "
+             f"Default: {DEFAULT_CRAM_VERSION}."
+    )
+    parser.add_argument(
+        "--dont-write-checksums", type="store_false", dest="write_checksums",
+        help="Do not store samtools checksum output on disk."
+    )
+    parser.add_argument(
+        "--dont-write-index", type="store_false", dest="write_index",
+        help="Do not write index files for CRAM files."
+    )
+    parser.add_argument("-v", "--verbose", action="count")
+    parser.add_argument("-q", "--quiet", action="count")
+    return parser
+
+
+def cram_archiver_main(*args):
+    arg = argument_parser().parse_args(args or None)
+    log_level = (arg.verbose - arg.quiet) * 10 + DEFAULT_LOG_LEVEL
+    cram_archiver(
+        input_path=arg.path,
+        reference_files=arg.reference,
+        threads=arg.threads,
+        cram_version=arg.cram_version,
+        write_index=arg.write_index,
+        write_checksum_files=arg.write_checksums,
+        log_level=log_level,
+    )
