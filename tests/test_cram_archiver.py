@@ -22,6 +22,7 @@ from cram_archiver import (
     checksum,
     convert_to_cram,
     convert_to_cram_and_check,
+    handle_file_age,
     strip_comments_from_checksum,
 )
 from cram_archiver.references import ReferenceID
@@ -70,3 +71,18 @@ def test_convert_to_cram_and_check(tmp_path, caplog, cram_version):
     assert output_file == tmp_cram
     assert "samtools view" in caplog.text
     assert f"version={cram_version}" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ["file_mtime", "older_than_timestamp", "success"],
+    [
+        (10.0, 0.0, False),
+        (0.0, 10.0, True),
+    ]
+)
+def test_handle_file_age(file_mtime, older_than_timestamp, success):
+    result = list(handle_file_age("test", file_mtime, older_than_timestamp))
+    if success:
+        assert result == ["test"]
+    else:
+        assert result == []
