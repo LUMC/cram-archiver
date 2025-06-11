@@ -266,6 +266,7 @@ def cram_archiver_main(*args):
         style="{")
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
+    logging.info(f"This is cram-archiver version: {__version__}.")
     cram_archiver(
         input_path=arg.path,
         reference_files=arg.reference,
