@@ -139,27 +139,15 @@ def cram_archiver(
         cram_version: str = DEFAULT_CRAM_VERSION,
         write_index: bool = DEFAULT_WRITE_INDEX,
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
-        log_level: int = DEFAULT_LOG_LEVEL,
         minimum_age_days: int = 0,
         delete: bool = False,
-        dry_run: bool = True,
+        dry_run: bool = False,
 ):
     if delete and not dry_run:
         logging.warning(
             "WARNING: BAM FILES WILL BE DELETED AFTER SUCCESSFUL CONVERSION!!!"
         )
     older_than_timestamp = time.time() - (minimum_age_days * 24 * 60 * 60)
-    logger = logging.getLogger()
-    logger.name = "cram-archiver"
-    logger.setLevel(log_level)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(log_level)
-    formatter = logging.Formatter(
-        "{name}:{asctime}:{levelname}: {message}",
-        datefmt="%Y-%m-%d %I:%M:%S",
-        style="{")
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
 
     ref_dicts: Dict[ReferenceID, str] = {}
     for reference in reference_files:
@@ -193,7 +181,7 @@ def cram_archiver(
             )
             if delete:
                 logging.info(
-                    f"Conversion successfull, deleting BAM file: {bam}")
+                    f"Conversion successful, deleting BAM file: {bam}")
                 os.unlink(bam)
         except (FileNotFoundError, RuntimeError) as error:
             logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
@@ -201,7 +189,7 @@ def cram_archiver(
     if number_of_bam_files == 0:
         logging.warning("No BAM files found. Exiting.")
     if errors:
-        raise RuntimeError("Errors occured during conversions.")
+        raise RuntimeError("Errors occurred during conversions.")
 
 
 def argument_parser() -> argparse.ArgumentParser:
@@ -257,6 +245,17 @@ def argument_parser() -> argparse.ArgumentParser:
 def cram_archiver_main(*args):
     arg = argument_parser().parse_args(args or None)
     log_level = (arg.quiet - arg.verbose) * 10 + DEFAULT_LOG_LEVEL
+    logger = logging.getLogger()
+    logger.name = "cram-archiver"
+    logger.setLevel(log_level)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    formatter = logging.Formatter(
+        "{name}:{asctime}:{levelname}: {message}",
+        datefmt="%Y-%m-%d %I:%M:%S",
+        style="{")
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
     cram_archiver(
         input_path=arg.path,
         reference_files=arg.reference,
@@ -264,7 +263,6 @@ def cram_archiver_main(*args):
         cram_version=arg.cram_version,
         write_index=arg.write_index,
         write_checksum_files=arg.write_checksums,
-        log_level=log_level,
         minimum_age_days=arg.minimum_age_days,
         delete=arg.delete,
         dry_run=arg.dry_run,

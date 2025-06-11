@@ -17,12 +17,14 @@ import itertools
 import logging
 import os.path
 import shutil
+import time
 from pathlib import Path
 
 from cram_archiver import (
     checksum,
     convert_to_cram,
     convert_to_cram_and_check,
+    cram_archiver,
     find_bam_files,
     handle_file_age,
     strip_comments_from_checksum,
@@ -32,6 +34,14 @@ from cram_archiver.references import ReferenceID
 import pytest
 
 TEST_DATA = Path(__file__).parent / "data"
+
+
+def get_file_cram_version(cram_file: str):
+    with open(cram_file, "rb") as f:
+        magic = f.read(6)
+    if magic[:4] != b"CRAM":
+        raise ValueError("Not a valid CRAM file")
+    return f"{magic[4]}.{magic[5]}"
 
 
 def test_checksum():
@@ -85,6 +95,7 @@ def test_convert_to_cram_and_check(
     assert os.path.exists(tmp_crai) is write_index
     assert os.path.exists(tmp_cram_checksum) is write_checksum_files
     assert os.path.exists(tmp_bam_checksum) is write_checksum_files
+    assert get_file_cram_version(tmp_cram) == cram_version
 
 
 @pytest.mark.parametrize(
@@ -134,3 +145,80 @@ def test_find_bam_files(tmp_path, caplog, debug):
     assert (str(bam3) in caplog.text) is debug
     assert (str(decoy1) in caplog.text) is debug
     assert (str(decoy2) in caplog.text) is debug
+
+
+@pytest.mark.parametrize(
+    ["cram_version", "write_index", "write_checksum_files", "delete"],
+    itertools.product(
+        ["3.0", "3.1"],
+        [True, False],
+        [True, False],
+        [True, False],
+    )
+)
+def test_cram_archiver(
+        cram_version,
+        write_index,
+        write_checksum_files,
+        delete,
+        tmp_path,
+        caplog,
+):
+    caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    cram1 = tmp_path / "bam1.cram"
+    cram2 = tmp_path / "bam2.cram"
+    cram3 = subdir / "bam3.cram"
+    bam1_checksum = tmp_path / "bam1.bam.checksum"
+    bam2_checksum = tmp_path / "bam2.bam.checksum"
+    bam3_checksum = subdir / "bam3.bam.checksum"
+    cram1_checksum = tmp_path / "bam1.cram.checksum"
+    cram2_checksum = tmp_path / "bam2.cram.checksum"
+    cram3_checksum = subdir / "bam3.cram.checksum"
+    cram1_index = tmp_path / "bam1.cram.crai"
+    cram2_index = tmp_path / "bam2.cram.crai"
+    cram3_index = subdir / "bam3.cram.crai"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam1)
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam2)
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam3)
+    decoy1.touch()
+    decoy2.touch()
+    current_time = time.time()
+    os.utime(bam1, (current_time, current_time - 10_000))
+    os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
+    os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
+    cram_archiver(
+        input_path=str(tmp_path),
+        reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+        cram_version=cram_version,
+        write_index=write_index,
+        write_checksum_files=write_checksum_files,
+        minimum_age_days=1,
+        delete=delete,
+    )
+    assert ("WILL BE DELETED" in caplog.text) is delete
+    assert (f"deleting BAM file: {bam2}" in caplog.text) is delete
+    assert (f"deleting BAM file: {bam3}" in caplog.text) is delete
+    assert bam1.exists()
+    assert bam2.exists() is not delete
+    assert bam3.exists() is not delete
+    assert not cram1.exists()  # Not old enough
+    assert not cram1_index.exists()
+    assert not bam1_checksum.exists()
+    assert not cram1_checksum.exists()
+    assert cram2.exists()
+    assert get_file_cram_version(str(cram2)) == cram_version
+    assert cram2_index.exists() is write_index
+    assert bam2_checksum.exists() is write_checksum_files
+    assert cram2_checksum.exists() is write_checksum_files
+    assert cram3.exists()
+    assert get_file_cram_version(str(cram3)) == cram_version
+    assert cram3_index.exists() is write_index
+    assert bam3_checksum.exists() is write_checksum_files
+    assert cram3_checksum.exists() is write_checksum_files
