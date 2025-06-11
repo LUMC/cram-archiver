@@ -241,3 +241,100 @@ def test_cram_archiver(
     assert cram3_index.exists() is write_index
     assert bam3_checksum.exists() is write_checksum_files
     assert cram3_checksum.exists() is write_checksum_files
+
+
+@pytest.mark.parametrize(
+    ["cram_version", "write_index", "write_checksum_files", "delete", "use_cli"],
+    itertools.product(
+        ["3.0", "3.1"],
+        [True, False],
+        [True, False],
+        [True, False],
+        [True, False],
+    )
+)
+def test_cram_archiver_single_file(
+        cram_version,
+        write_index,
+        write_checksum_files,
+        delete,
+        use_cli,
+        tmp_path,
+        caplog,
+):
+    caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam = tmp_path / "bam1.bam"
+    cram = tmp_path / "bam1.cram"
+    bam_checksum = tmp_path / "bam1.bam.checksum"
+    cram_checksum = tmp_path / "bam1.cram.checksum"
+    cram_index = tmp_path / "bam1.cram.crai"
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam)
+    if use_cli:
+        args = [
+            str(bam),
+            "--reference", str(TEST_DATA / "NC012920.1.fasta"),
+            "--cram-version", cram_version,
+            "-vvvv",
+        ]
+        if not write_index:
+            args.append("--dont-write-index")
+        if not write_checksum_files:
+            args.append("--dont-write-checksums")
+        if delete:
+            args.append("--delete")
+        cram_archiver_main(*args)
+    else:
+        cram_archiver(
+            input_path=str(bam),
+            reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+            cram_version=cram_version,
+            write_index=write_index,
+            write_checksum_files=write_checksum_files,
+            delete=delete,
+        )
+    assert ("WILL BE DELETED" in caplog.text) is delete
+    assert bam.exists() is not delete
+    assert cram.exists()
+    assert cram_index.exists() is write_index
+    assert bam_checksum.exists() is write_checksum_files
+    assert cram_checksum.exists() is write_checksum_files
+    assert get_file_cram_version(str(cram)) == cram_version
+
+
+@pytest.mark.parametrize(
+    ["delete", "write_checksum_files", "write_index"],
+    itertools.product(
+        [True, False], [True, False], [True, False]
+    )
+)
+def test_cram_archiver_dry_run(tmp_path, capsys, delete,
+                               write_checksum_files,
+                               write_index):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    current_time = time.time()
+    os.utime(bam1, (current_time, current_time - 10_000))
+    os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
+    os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
+    cram_archiver(
+        input_path=str(tmp_path),
+        reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+        minimum_age_days=1,
+        dry_run=True,
+        delete=delete,
+        write_checksum_files=write_checksum_files,
+        write_index=write_index,
+    )
+    stdout, stderr = capsys.readouterr()
+    assert set(stdout.splitlines()) == {str(bam2), str(bam3)}
+    # Check if no new files are created or that anything is deleted
+    assert {str(x) for x in tmp_path.iterdir()} == {str(subdir), str(bam1), str(bam2)}
+    assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
