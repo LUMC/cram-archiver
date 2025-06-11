@@ -25,6 +25,7 @@ from cram_archiver import (
     convert_to_cram,
     convert_to_cram_and_check,
     cram_archiver,
+    cram_archiver_main,
     find_bam_files,
     handle_file_age,
     strip_comments_from_checksum,
@@ -148,9 +149,10 @@ def test_find_bam_files(tmp_path, caplog, debug):
 
 
 @pytest.mark.parametrize(
-    ["cram_version", "write_index", "write_checksum_files", "delete"],
+    ["cram_version", "write_index", "write_checksum_files", "delete", "use_cli"],
     itertools.product(
         ["3.0", "3.1"],
+        [True, False],
         [True, False],
         [True, False],
         [True, False],
@@ -161,6 +163,7 @@ def test_cram_archiver(
         write_index,
         write_checksum_files,
         delete,
+        use_cli,
         tmp_path,
         caplog,
 ):
@@ -193,15 +196,31 @@ def test_cram_archiver(
     os.utime(bam1, (current_time, current_time - 10_000))
     os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
     os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
-    cram_archiver(
-        input_path=str(tmp_path),
-        reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
-        cram_version=cram_version,
-        write_index=write_index,
-        write_checksum_files=write_checksum_files,
-        minimum_age_days=1,
-        delete=delete,
-    )
+    if use_cli:
+        args = [
+            str(tmp_path),
+            "--reference", str(TEST_DATA / "NC012920.1.fasta"),
+            "--cram-version", cram_version,
+            "-vvvv",
+            "--minimum-age-days", "1"
+        ]
+        if not write_index:
+            args.append("--dont-write-index")
+        if not write_checksum_files:
+            args.append("--dont-write-checksums")
+        if delete:
+            args.append("--delete")
+        cram_archiver_main(*args)
+    else:
+        cram_archiver(
+            input_path=str(tmp_path),
+            reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+            cram_version=cram_version,
+            write_index=write_index,
+            write_checksum_files=write_checksum_files,
+            minimum_age_days=1,
+            delete=delete,
+        )
     assert ("WILL BE DELETED" in caplog.text) is delete
     assert (f"deleting BAM file: {bam2}" in caplog.text) is delete
     assert (f"deleting BAM file: {bam3}" in caplog.text) is delete
