@@ -94,8 +94,12 @@ def convert_to_cram_and_check(
     logging.info(f"Convert '{input_file}' to '{output_file}'.")
     convert_to_cram(input_file, output_file, reference, threads, cram_version,
                     write_index)
+    logging.info(f"Checksumming {input_file}.")
     input_checksum = checksum(input_file, reference, threads)
+    logging.debug(input_checksum)
+    logging.info(f"Checksumming {output_file}.")
     output_checksum = checksum(output_file, reference, threads)
+    logging.debug(output_checksum)
     if write_checksum_files:
         with open(input_file + ".checksum", "wt") as f:
             f.write(input_checksum)
