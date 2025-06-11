@@ -13,6 +13,9 @@ disk space.
 Features:
 
 + Automated recursive discovery of all ``.bam`` files in a directory.
++ Multiple reference support. Cram-archiver loads in fasta indexed references
+  and checks that the appropriate BAM file is matched to the appropriate
+  reference using the contig and length information in the BAM header.
 + Performs CRAM conversion using ``samtools view``.
 + Performs ``samtools checksum --all`` on the BAM and CRAM file and checks
   if the checksum matches.
@@ -55,6 +58,19 @@ To assure the CRAM file is "functionally the same" as the BAM file, the
 ``samtools checksum`` tool with the ``--all`` flag is run. For more information
 about comparing BAM and CRAM checkout `the discussion here
 <https://github.com/samtools/samtools/issues/2212>`_.
+
+On CRAM format settings
+=======================
+Cram-archiver uses version 3.0 of the CRAM standard by default. The reason
+for this is that CRAM version 3.0 is better supported than version 3.1.
+CRAM version 3.1 comes with newer codecs and is able to achieve smaller
+filesizes because of that.
+
+Cram archiver uses the CRAM default presets. CRAM has some presets: fast,
+normal, small and archive. However, the size differences between normal and
+archive are quite small (less than 6% smaller in our tests). On top of that,
+the memory requirements rise steeply especially on very long read alignments of
+ONT data.
 
 Acknowledgements
 ================
