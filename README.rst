@@ -123,7 +123,9 @@ On CRAM format settings
 Cram-archiver uses version 3.0 of the CRAM standard by default. The reason
 for this is that CRAM version 3.0 is better supported than version 3.1.
 CRAM version 3.1 comes with newer codecs and is able to achieve smaller
-file sizes because of that.
+file sizes because of that. For more information checkout the
+`article on advances in CRAM by James Bonfield
+<https://doi.org/10.1093/bioinformatics/btac010>`_.
 
 Cram archiver uses the CRAM default presets. CRAM has some presets: fast,
 normal, small and archive. However, the size differences between normal and
