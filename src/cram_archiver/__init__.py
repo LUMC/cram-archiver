@@ -266,7 +266,6 @@ def cram_archiver_main(*args):
     console_handler.setLevel(log_level)
     formatter = logging.Formatter(
         "{name}:{asctime}:{levelname}: {message}",
-        datefmt="%Y-%m-%d %I:%M:%S",
         style="{")
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
