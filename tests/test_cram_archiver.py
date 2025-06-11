@@ -23,6 +23,7 @@ from cram_archiver import (
     checksum,
     convert_to_cram,
     convert_to_cram_and_check,
+    find_bam_files,
     handle_file_age,
     strip_comments_from_checksum,
 )
@@ -103,3 +104,33 @@ def test_handle_file_age(file_mtime, older_than_timestamp, success, caplog):
         assert result == []
         assert "test" in caplog.text
         assert "Skipping" in caplog.text
+
+
+@pytest.mark.parametrize("debug", [True, False])
+def test_find_bam_files(tmp_path, caplog, debug):
+    if debug:
+        caplog.set_level(logging.DEBUG)
+    else:
+        caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    decoy1.touch()
+    decoy2.touch()
+    os.utime(bam1, (1000, 300))
+    os.utime(bam2, (1000, 200))
+    os.utime(bam3, (1000, 100))
+    result = list(find_bam_files(str(tmp_path), older_than_timestamp=201))
+    assert set(result) == {str(bam2), str(bam3)}
+    assert str(bam1) in caplog.text
+    assert (str(bam2) in caplog.text) is debug
+    assert (str(bam3) in caplog.text) is debug
+    assert (str(decoy1) in caplog.text) is debug
+    assert (str(decoy2) in caplog.text) is debug
