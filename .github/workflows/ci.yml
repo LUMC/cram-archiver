@@ -51,7 +51,7 @@ jobs:
       - name: Set up environment with Python ${{ matrix.python-version }}
         shell: bash -el {0}
         run:
-           conda install python~=${{ matrix.python-version }} tox
+           conda install 'python==${{ matrix.python-version }}' tox 'samtools>=1.22'
       - name: Run tests
         shell: bash -el {0}
         run: tox
