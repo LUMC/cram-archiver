@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 from typing import Dict, Iterator, Sequence
 
+from ._version import __version__
 from .references import ReferenceID
 
 # 3.1 Not supported by some tools currently (2025)
@@ -244,6 +245,9 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-q", "--quiet", action="count", default=0,
         help="Display less logging information."
+    )
+    parser.add_argument(
+        "--version", action="version", version=__version__
     )
     return parser
 

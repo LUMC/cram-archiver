@@ -35,6 +35,7 @@ cram-archiver = "cram_archiver.__main__:main"
 where = ["src"]
 
 [tool.setuptools_scm]
+write_to = "src/cram_archiver/_version.py"
 
 [project.urls]
 "Homepage" = "https://github.com/lumc/cram-archiver"
