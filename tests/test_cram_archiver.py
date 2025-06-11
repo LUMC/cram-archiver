@@ -13,6 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with cram-archiver. If not, see <https://www.gnu.org/licenses/
+import itertools
 import logging
 import os.path
 import shutil
@@ -54,11 +55,18 @@ def test_convert_to_cram(tmp_path):
     assert tmp_cram.exists()
 
 
-@pytest.mark.parametrize("cram_version", ["3.0", "3.1"])
-def test_convert_to_cram_and_check(tmp_path, caplog, cram_version):
-    logging.getLogger().setLevel(logging.DEBUG)
+@pytest.mark.parametrize(
+    ["cram_version", "write_index", "write_checksum_files"],
+    itertools.product(["3.0", "3.1"], [True, False], [True, False])
+)
+def test_convert_to_cram_and_check(
+        tmp_path, caplog, cram_version, write_index, write_checksum_files):
+    caplog.set_level(logging.DEBUG)
     tmp_bam = str(tmp_path / "GM24385_1.bam")
     tmp_cram = str(tmp_path / "GM24385_1.cram")
+    tmp_crai = tmp_cram + ".crai"
+    tmp_bam_checksum = tmp_bam + ".checksum"
+    tmp_cram_checksum = tmp_cram + ".checksum"
     shutil.copy(TEST_DATA / "GM24385_1.bam",  tmp_bam)
     reference = TEST_DATA / "NC012920.1.fasta"
     reference_fai = str(reference) + ".fai"
@@ -66,11 +74,16 @@ def test_convert_to_cram_and_check(tmp_path, caplog, cram_version):
         str(tmp_bam),
         {ReferenceID.from_file(reference_fai): str(reference)},
         cram_version=cram_version,
+        write_index=write_index,
+        write_checksum_files=write_checksum_files,
     )
     assert os.path.exists(output_file)
     assert output_file == tmp_cram
     assert "samtools view" in caplog.text
     assert f"version={cram_version}" in caplog.text
+    assert os.path.exists(tmp_crai) is write_index
+    assert os.path.exists(tmp_cram_checksum) is write_checksum_files
+    assert os.path.exists(tmp_bam_checksum) is write_checksum_files
 
 
 @pytest.mark.parametrize(
@@ -80,9 +93,13 @@ def test_convert_to_cram_and_check(tmp_path, caplog, cram_version):
         (0.0, 10.0, True),
     ]
 )
-def test_handle_file_age(file_mtime, older_than_timestamp, success):
+def test_handle_file_age(file_mtime, older_than_timestamp, success, caplog):
+    caplog.set_level(logging.INFO)
     result = list(handle_file_age("test", file_mtime, older_than_timestamp))
     if success:
         assert result == ["test"]
+        assert caplog.text == ""
     else:
         assert result == []
+        assert "test" in caplog.text
+        assert "Skipping" in caplog.text
