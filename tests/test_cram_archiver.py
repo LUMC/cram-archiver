@@ -338,3 +338,18 @@ def test_cram_archiver_dry_run(tmp_path, capsys, delete,
     # Check if no new files are created or that anything is deleted
     assert {str(x) for x in tmp_path.iterdir()} == {str(subdir), str(bam1), str(bam2)}
     assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
+
+
+def test_cram_archiver_no_reference_fai(tmp_path):
+    bam = tmp_path / "my.bam"
+    reference = tmp_path / "reference.fa"
+    with pytest.raises(FileNotFoundError) as error:
+        cram_archiver(str(bam), [str(reference)])
+    error.match("Fasta index")
+    error.match(str(reference))
+    error.match("not be found")
+
+
+def test_cram_archiver_no_bam_files(tmp_path, caplog):
+    cram_archiver(str(tmp_path), [str(TEST_DATA / "NC012920.1.fasta")])
+    assert "No BAM files found." in caplog.text
