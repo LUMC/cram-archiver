@@ -59,12 +59,71 @@ To assure the CRAM file is "functionally the same" as the BAM file, the
 about comparing BAM and CRAM checkout `the discussion here
 <https://github.com/samtools/samtools/issues/2212>`_.
 
+Quickstart
+==========
+
+Converting a single BAM file::
+
+    cram-archiver -r my_reference.fasta my.bam
+
+This will create ``my.cram``, ``my.cram.crai``, ``my.cram.checksum`` and
+``my.bam.checksum``. Checksum file creation can be turned of with
+``--dont-write-checksums``. The checkums will still be checked, just not
+written to disk.
+
+Archiving a directory with BAMs, but only BAMs that have a lost modified time
+older than 30 days. Also, there are hg19 and hg38 BAM files in the directory.::
+
+    cram-archiver --reference hg19.fasta --reference hg38.fasta --minimum-age-days 30 my_directory
+
+If the ``--delete`` flag is added, all the converted BAM files will be deleted
+and just the CRAM files remain. This only happens when the conversion is
+succesful and the checksums match.
+
+Usage
+=====
+
+    usage: cram-archiver [-h] -r REFERENCE [-t THREADS] [-d MINIMUM_AGE_DAYS]
+                         [--delete] [--cram-version CRAM_VERSION]
+                         [--dont-write-checksums] [--dont-write-index] [--dry-run]
+                         [-v] [-q]
+                         PATH
+
+    positional arguments:
+      PATH                  Path to BAM file or directory to be recursively
+                            searched.
+
+    options:
+      -h, --help            show this help message and exit
+      -r REFERENCE, --reference REFERENCE
+                            Reference to be used for CRAM conversion. Can be used
+                            multiple times. Reference will be checked with the BAM
+                            file.
+      -t THREADS, --threads THREADS
+                            The number of threads used for conversion and
+                            checksumming.Default: 1.
+      -d MINIMUM_AGE_DAYS, --minimum-age-days MINIMUM_AGE_DAYS
+                            The minimum last modification of the BAM file in days
+                            prior. This assumes the system clock timezone matches
+                            that of the file while also assuming that every day
+                            has 24x60x60 seconds. Default 0.
+      --delete              Delete BAM files after successful conversion.
+      --cram-version CRAM_VERSION
+                            CRAM version to use for CRAM conversion. Default: 3.0.
+      --dont-write-checksums
+                            Do not store samtools checksum output on disk.
+      --dont-write-index    Do not write index files for CRAM files.
+      --dry-run             Print the paths of the to be archived BAM files.
+                            Perform no actions.
+      -v, --verbose         Display more logging information.
+      -q, --quiet           Display less logging information.
+
 On CRAM format settings
 =======================
 Cram-archiver uses version 3.0 of the CRAM standard by default. The reason
 for this is that CRAM version 3.0 is better supported than version 3.1.
 CRAM version 3.1 comes with newer codecs and is able to achieve smaller
-filesizes because of that.
+file sizes because of that.
 
 Cram archiver uses the CRAM default presets. CRAM has some presets: fast,
 normal, small and archive. However, the size differences between normal and

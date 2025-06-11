@@ -29,7 +29,7 @@ DEFAULT_CRAM_VERSION = "3.0"
 DEFAULT_THREADS = 1
 DEFAULT_WRITE_INDEX = True
 DEFAULT_WRITE_CHECKSUM_FILES = True
-DEFAULT_LOG_LEVEL = logging.WARNING
+DEFAULT_LOG_LEVEL = logging.INFO
 DEFAULT_MINIMUM_AGE_DAYS = 0
 
 
@@ -237,8 +237,14 @@ def argument_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true",
         help="Print the paths of the to be archived BAM files. Perform no actions."
     )
-    parser.add_argument("-v", "--verbose", action="count", default=0)
-    parser.add_argument("-q", "--quiet", action="count", default=0)
+    parser.add_argument(
+        "-v", "--verbose", action="count", default=0,
+        help="Display more logging information."
+    )
+    parser.add_argument(
+        "-q", "--quiet", action="count", default=0,
+        help="Display less logging information."
+    )
     return parser
 
 
