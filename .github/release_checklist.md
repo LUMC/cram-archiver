@@ -4,7 +4,7 @@ Release checklist
 - [ ] Create a release branch.
   - [ ] Change current development version in `CHANGELOG.rst` to stable version.
 - [ ] Merge the release branch into `main`.
-- - [ ] Created an annotated tag with the stable version number. Include changes 
+  - [ ] Created an annotated tag with the stable version number. Include changes 
 from CHANGELOG.rst.
 - [ ] Create a pypi package from the master branch. 
       (Use `pip install build` and `python -m build .`)
