@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name="cram-archiver"
+description="A samtools wrapper for CRAM conversion automation."
+readme = "README.rst"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+
+authors = [
+    {name = "Leiden University Medical Center", email = "sasc@lumc.nl"}
+]
+dynamic = ["version"]
+classifiers = [
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Development Status :: 5 - Production/Stable",
+        "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+keywords=[
+    "CRAM",
+    "archive",
+]
+
+[project.scripts]
+cram-archiver = "cram_archiver.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+write_to = "src/cram_archiver/_version.py"
+
+[project.urls]
+"Homepage" = "https://github.com/lumc/cram-archiver"
