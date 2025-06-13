@@ -1,6 +1,6 @@
 Release checklist
 - [ ] Check outstanding issues on JIRA and GitHub.
-- [ ] Check [latest documentation](https://cram-archiver.readthedocs.io/en/latest/) looks fine.
+- [ ] Check README looks fine.
 - [ ] Create a release branch.
   - [ ] Change current development version in `CHANGELOG.rst` to stable version.
 - [ ] Merge the release branch into `main`.
