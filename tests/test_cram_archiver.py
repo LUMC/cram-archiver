@@ -205,7 +205,7 @@ def test_find_bam_files_exclude(tmp_path: Path, caplog, debug):
         str(tmp_path),
         # Make the timestamp very big to avoid testing issues.
         older_than_timestamp=math.inf,
-        ignore_files={str(bam1.absolute())}
+        ignore_files=[str(bam1.absolute())]
     ))
     assert set(result) == {str(bam2), str(bam3)}
     assert str(bam1) in caplog.text
@@ -428,6 +428,44 @@ def test_cram_archiver_dry_run_exclude_files(tmp_path, capsys):
     # Check if no new files are created or that anything is deleted
     assert {str(x) for x in tmp_path.iterdir()} == {str(subdir), str(bam1), str(bam2)}
     assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
+
+
+def test_cram_archiver_dry_run_root_dir_excluded(tmp_path, capsys):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    cram_archiver(
+        input_path=str(tmp_path),
+        reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+        dry_run=True,
+        ignore_files=[str(tmp_path)],
+    )
+    stdout, stderr = capsys.readouterr()
+    assert set(stdout.splitlines()) == set()
+    # Check if no new files are created or that anything is deleted
+    assert {str(x) for x in tmp_path.iterdir()} == {str(subdir), str(bam1),
+                                                    str(bam2)}
+    assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
+
+
+def test_cram_archiver_dry_run_root_file_excluded(tmp_path, capsys):
+    bam1 = tmp_path / "bam1.bam"
+    bam1.touch()
+    cram_archiver(
+        input_path=str(bam1),
+        reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+        dry_run=True,
+        ignore_files=[str(bam1)],
+    )
+    stdout, stderr = capsys.readouterr()
+    assert set(stdout.splitlines()) == set()
+    # Check if no new files are created or that anything is deleted
+    assert {str(x) for x in tmp_path.iterdir()} == {str(bam1)}
 
 
 def test_cram_archiver_main_dry_run_exclude_files(tmp_path, capsys):

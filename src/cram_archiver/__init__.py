@@ -20,7 +20,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, Optional, Sequence, Set
+from typing import Dict, Iterator, Optional, Sequence, Set
 
 from ._version import __version__
 from .references import ReferenceID
@@ -125,14 +125,12 @@ def handle_file_age(file, file_mtime: float, older_than_timestamp: float
         logging.info(f"Skipping too new file: {file}.")
 
 
-def find_bam_files(
+def _find_bam_files_dirscan(
         input_dir: str,
-        older_than_timestamp: float = time.time(),
-        ignore_files: Optional[Set[str]] = None,
-        follow_symlinks=False,
-) -> Iterator[str]:
-    if ignore_files is None:
-        ignore_files = set()
+        older_than_timestamp: float,
+        ignore_files: Set[str],
+        follow_symlinks: bool,
+):
     for entry in os.scandir(input_dir):
         if entry.path in ignore_files:
             logging.info(f"Ignoring {entry.path}")
@@ -143,8 +141,32 @@ def find_bam_files(
                 yield from handle_file_age(
                     entry.path, entry.stat().st_mtime, older_than_timestamp)
         elif entry.is_dir(follow_symlinks=follow_symlinks):
-            yield from find_bam_files(
-                entry.path, older_than_timestamp, ignore_files)
+            yield from _find_bam_files_dirscan(
+                entry.path, older_than_timestamp, ignore_files, follow_symlinks)
+
+
+def find_bam_files(
+        input_path: str,
+        older_than_timestamp: float = time.time(),
+        ignore_files: Optional[Sequence[str]] = None,
+        follow_symlinks=False,
+) -> Iterator[str]:
+    if ignore_files is not None:
+        ignore_set = set(ignore_files)
+    else:
+        ignore_set = set()
+    if input_path in ignore_set:
+        logging.info(f"Ignoring {input_path}")
+        return
+    if os.path.islink(input_path) and not follow_symlinks:
+        return
+    if os.path.isfile(input_path):
+        yield from handle_file_age(
+            input_path, os.path.getmtime(input_path), older_than_timestamp)
+    elif os.path.isdir(input_path):
+        yield from _find_bam_files_dirscan(
+            input_path, older_than_timestamp, ignore_set, follow_symlinks
+        )
 
 
 def cram_archiver(
@@ -157,15 +179,13 @@ def cram_archiver(
         minimum_age_days: int = 0,
         delete: bool = False,
         dry_run: bool = False,
-        ignore_files: Optional[Iterable[str]] = None
+        ignore_files: Optional[Sequence[str]] = None
 ):
     if delete and not dry_run:
         logging.warning(
             "WARNING: BAM FILES WILL BE DELETED AFTER SUCCESSFUL CONVERSION!!!"
         )
     older_than_timestamp = time.time() - (minimum_age_days * 24 * 60 * 60)
-    if ignore_files is not None:
-        ignore_files = set(ignore_files)
 
     ref_dicts: Dict[ReferenceID, str] = {}
     for reference in reference_files:
@@ -176,12 +196,7 @@ def cram_archiver(
         ref_id = ReferenceID.from_file(fai)
         ref_dicts[ref_id] = reference
 
-    if os.path.isfile(input_path):
-        bam_files = handle_file_age(
-            input_path, os.stat(input_path).st_mtime, older_than_timestamp)
-    else:
-        bam_files = find_bam_files(input_path, older_than_timestamp, ignore_files)
-
+    bam_files = find_bam_files(input_path, older_than_timestamp, ignore_files)
     number_of_bam_files = 0
     errors = []
     for number_of_bam_files, bam in enumerate(bam_files, start=1):
