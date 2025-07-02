@@ -9,6 +9,7 @@ Changelog
 
 develop
 ------------------
++ Do not follow symbolic links anymore.
 + Add ``--exclude`` and ``--exclude-list`` command line options to allow
   for automatically excluding files.
 

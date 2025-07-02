@@ -129,6 +129,7 @@ def find_bam_files(
         input_dir: str,
         older_than_timestamp: float = time.time(),
         ignore_files: Optional[Set[str]] = None,
+        follow_symlinks=False,
 ) -> Iterator[str]:
     if ignore_files is None:
         ignore_files = set()
@@ -137,11 +138,11 @@ def find_bam_files(
             logging.info(f"Ignoring {entry.path}")
             continue
         logging.debug(f"Searching: {entry.path}")
-        if entry.is_file():
+        if entry.is_file(follow_symlinks=follow_symlinks):
             if entry.name.endswith(".bam"):
                 yield from handle_file_age(
                     entry.path, entry.stat().st_mtime, older_than_timestamp)
-        elif entry.is_dir():
+        elif entry.is_dir(follow_symlinks=follow_symlinks):
             yield from find_bam_files(
                 entry.path, older_than_timestamp, ignore_files)
 
