@@ -7,6 +7,11 @@ Changelog
 .. This document is user facing. Please word the changes in such a way
 .. that users understand how the changes affect the new version.
 
+develop
+------------------
++ Add ``--exclude`` and ``--exclude-list`` command line options to allow
+  for automatically excluding files.
+
 1.0.0
 ------------------
 + Create a samtools wrapper that can convert BAM files into CRAM and delete

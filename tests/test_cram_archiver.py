@@ -15,6 +15,7 @@
 # along with cram-archiver. If not, see <https://www.gnu.org/licenses/
 import itertools
 import logging
+import math
 import os.path
 import shutil
 import time
@@ -142,6 +143,39 @@ def test_find_bam_files(tmp_path, caplog, debug):
     result = list(find_bam_files(str(tmp_path), older_than_timestamp=201))
     assert set(result) == {str(bam2), str(bam3)}
     assert str(bam1) in caplog.text
+    assert (str(bam2) in caplog.text) is debug
+    assert (str(bam3) in caplog.text) is debug
+    assert (str(decoy1) in caplog.text) is debug
+    assert (str(decoy2) in caplog.text) is debug
+
+
+@pytest.mark.parametrize("debug", [True, False])
+def test_find_bam_files_exclude(tmp_path: Path, caplog, debug):
+    if debug:
+        caplog.set_level(logging.DEBUG)
+    else:
+        caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    decoy1.touch()
+    decoy2.touch()
+    result = list(find_bam_files(
+        str(tmp_path),
+        # Make the timestamp very big to avoid testing issues.
+        older_than_timestamp=math.inf,
+        ignore_files={str(bam1.absolute())}
+    ))
+    assert set(result) == {str(bam2), str(bam3)}
+    assert str(bam1) in caplog.text
+    assert "Ignoring" in caplog.text
     assert (str(bam2) in caplog.text) is debug
     assert (str(bam3) in caplog.text) is debug
     assert (str(decoy1) in caplog.text) is debug
@@ -337,6 +371,76 @@ def test_cram_archiver_dry_run(tmp_path, capsys, delete,
     assert set(stdout.splitlines()) == {str(bam2), str(bam3)}
     # Check if no new files are created or that anything is deleted
     assert {str(x) for x in tmp_path.iterdir()} == {str(subdir), str(bam1), str(bam2)}
+    assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
+
+
+def test_cram_archiver_dry_run_exclude_files(tmp_path, capsys):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    cram_archiver(
+        input_path=str(tmp_path),
+        reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+        dry_run=True,
+        ignore_files=[str(bam1), str(bam3)],
+    )
+    stdout, stderr = capsys.readouterr()
+    assert set(stdout.splitlines()) == {str(bam2)}
+    # Check if no new files are created or that anything is deleted
+    assert {str(x) for x in tmp_path.iterdir()} == {str(subdir), str(bam1), str(bam2)}
+    assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
+
+
+def test_cram_archiver_main_dry_run_exclude_files(tmp_path, capsys):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    cram_archiver_main(
+        "--reference", str(TEST_DATA / "NC012920.1.fasta"),
+        "--dry-run",
+        "--exclude", str(bam1),
+        "--exclude", str(bam3),
+        str(tmp_path)
+    )
+    stdout, stderr = capsys.readouterr()
+    assert set(stdout.splitlines()) == {str(bam2)}
+    # Check if no new files are created or that anything is deleted
+    assert {str(x) for x in tmp_path.iterdir()} == {str(subdir), str(bam1), str(bam2)}
+    assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
+
+
+def test_cram_archiver_main_dry_run_exclude_files_list(tmp_path, capsys):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    exclude_list = tmp_path / "exclude.txt"
+    exclude_list.write_text(f"{bam1}\n{bam3}")
+    cram_archiver_main(
+        "--reference", str(TEST_DATA / "NC012920.1.fasta"),
+        "--dry-run",
+        "--exclude-list", str(exclude_list),
+        str(tmp_path)
+    )
+    stdout, stderr = capsys.readouterr()
+    assert set(stdout.splitlines()) == {str(bam2)}
+    # Check if no new files are created or that anything is deleted
+    assert {str(x) for x in tmp_path.iterdir()} == {
+        str(exclude_list), str(subdir), str(bam1), str(bam2)}
     assert {str(x) for x in subdir.iterdir()} == {str(bam3)}
 
 
