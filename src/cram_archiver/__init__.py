@@ -211,7 +211,6 @@ def cram_archiver(
         if dry_run:
             print(bam)
             continue
-        logging.info(f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
         try:
             cram_file = convert_to_cram_and_check(
                 input_file=bam,
@@ -224,6 +223,7 @@ def cram_archiver(
             cram_name = os.path.basename(cram_file)
             cram_size = os.path.getsize(cram_file)
             total_cram_size += cram_size
+            logging.info(f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
             logging.info(f"{cram_name} size: {cram_size / (1024 ** 3):.2f} GiB")
             if delete:
                 logging.info(
