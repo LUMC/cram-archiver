@@ -151,8 +151,11 @@ def find_bam_files(
         ignore_files: Optional[Sequence[str]] = None,
         follow_symlinks=False,
 ) -> Iterator[str]:
+    # Make input path and ignore files absolute. This also deals with trailing
+    # slashes for directories and ../ entries.
+    input_path = os.path.abspath(input_path)
     if ignore_files is not None:
-        ignore_set = set(ignore_files)
+        ignore_set = {os.path.abspath(p) for p in ignore_files}
     else:
         ignore_set = set()
     if input_path in ignore_set:
