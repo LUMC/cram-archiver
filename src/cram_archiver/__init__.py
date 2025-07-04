@@ -199,12 +199,18 @@ def cram_archiver(
     bam_files = find_bam_files(input_path, older_than_timestamp, ignore_files)
     number_of_bam_files = 0
     errors = []
+    total_bam_size = 0
+    total_cram_size = 0
     for number_of_bam_files, bam in enumerate(bam_files, start=1):
+        bam_size = os.path.getsize(bam)
+        bam_name = os.path.basename(bam)
+        total_bam_size += bam_size
         if dry_run:
             print(bam)
             continue
+        logging.info(f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
         try:
-            convert_to_cram_and_check(
+            cram_file = convert_to_cram_and_check(
                 input_file=bam,
                 reference_id_to_path=ref_dicts,
                 threads=threads,
@@ -212,15 +218,35 @@ def cram_archiver(
                 write_index=write_index,
                 write_checksum_files=write_checksum_files,
             )
+            cram_name = os.path.basename(cram_file)
+            cram_size = os.path.getsize(cram_file)
+            total_cram_size += cram_size
+            logging.info(f"{cram_name} size: {cram_size / (1024 ** 3):.2f} GiB")
             if delete:
                 logging.info(
-                    f"Conversion successful, deleting BAM file: {bam}")
+                    f"Conversion successful, deleting BAM file: {bam}. Saved "
+                    f"space: {(bam_size - cram_size) / (1024 ** 3):.2f} GiB."
+                )
                 os.unlink(bam)
         except (FileNotFoundError, RuntimeError) as error:
             logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
             errors.append(error)
     if number_of_bam_files == 0:
         logging.warning("No BAM files found. Exiting.")
+    else:
+        logging.info(
+            f"Found {number_of_bam_files} BAM files of "
+            f"total: {total_bam_size / (1024 ** 3):.2f} GiB.")
+        if not dry_run:
+            logging.info(
+                f"Total generated CRAM size: "
+                f"{total_cram_size / (1024 ** 3):.2f} GiB.")
+            if delete:
+                logging.info(
+                    f"Total saved size: "
+                    f"{(total_bam_size - total_cram_size) / (1024 ** 3):.2f} "
+                    f"GiB."
+                )
     if errors:
         raise RuntimeError("Errors occurred during conversions.")
 

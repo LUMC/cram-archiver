@@ -9,6 +9,8 @@ Changelog
 
 develop
 ------------------
++ Filesizes are logged as well as space savings. Total filesizes and space
+  savings are logged at the end of the program run.
 + Do not follow symbolic links anymore.
 + Add ``--exclude`` and ``--exclude-list`` command line options to allow
   for automatically excluding files.
