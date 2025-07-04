@@ -20,7 +20,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Iterator, Sequence
+from typing import Dict, Iterator, Optional, Sequence, Set
 
 from ._version import __version__
 from .references import ReferenceID
@@ -125,16 +125,48 @@ def handle_file_age(file, file_mtime: float, older_than_timestamp: float
         logging.info(f"Skipping too new file: {file}.")
 
 
-def find_bam_files(input_dir: str, older_than_timestamp: float = time.time()
-                   ) -> Iterator[str]:
+def _find_bam_files_dirscan(
+        input_dir: str,
+        older_than_timestamp: float,
+        ignore_files: Set[str],
+        follow_symlinks: bool,
+):
     for entry in os.scandir(input_dir):
+        if entry.path in ignore_files:
+            logging.info(f"Ignoring {entry.path}")
+            continue
         logging.debug(f"Searching: {entry.path}")
-        if entry.is_file():
+        if entry.is_file(follow_symlinks=follow_symlinks):
             if entry.name.endswith(".bam"):
                 yield from handle_file_age(
                     entry.path, entry.stat().st_mtime, older_than_timestamp)
-        elif entry.is_dir():
-            yield from find_bam_files(entry.path, older_than_timestamp)
+        elif entry.is_dir(follow_symlinks=follow_symlinks):
+            yield from _find_bam_files_dirscan(
+                entry.path, older_than_timestamp, ignore_files, follow_symlinks)
+
+
+def find_bam_files(
+        input_path: str,
+        older_than_timestamp: float = time.time(),
+        ignore_files: Optional[Sequence[str]] = None,
+        follow_symlinks=False,
+) -> Iterator[str]:
+    if ignore_files is not None:
+        ignore_set = set(ignore_files)
+    else:
+        ignore_set = set()
+    if input_path in ignore_set:
+        logging.info(f"Ignoring {input_path}")
+        return
+    if os.path.islink(input_path) and not follow_symlinks:
+        return
+    if os.path.isfile(input_path):
+        yield from handle_file_age(
+            input_path, os.path.getmtime(input_path), older_than_timestamp)
+    elif os.path.isdir(input_path):
+        yield from _find_bam_files_dirscan(
+            input_path, older_than_timestamp, ignore_set, follow_symlinks
+        )
 
 
 def cram_archiver(
@@ -147,6 +179,7 @@ def cram_archiver(
         minimum_age_days: int = 0,
         delete: bool = False,
         dry_run: bool = False,
+        ignore_files: Optional[Sequence[str]] = None
 ):
     if delete and not dry_run:
         logging.warning(
@@ -163,12 +196,7 @@ def cram_archiver(
         ref_id = ReferenceID.from_file(fai)
         ref_dicts[ref_id] = reference
 
-    if os.path.isfile(input_path):
-        bam_files = handle_file_age(
-            input_path, os.stat(input_path).st_mtime, older_than_timestamp)
-    else:
-        bam_files = find_bam_files(input_path, older_than_timestamp)
-
+    bam_files = find_bam_files(input_path, older_than_timestamp, ignore_files)
     number_of_bam_files = 0
     errors = []
     for number_of_bam_files, bam in enumerate(bam_files, start=1):
@@ -231,6 +259,16 @@ def argument_parser() -> argparse.ArgumentParser:
              f"Default: {DEFAULT_CRAM_VERSION}."
     )
     parser.add_argument(
+        "--exclude", action="append",
+        help="Exclude file or directory from conversion. "
+             "Can be supplied multiple times."
+    )
+    parser.add_argument(
+        "--exclude-list", metavar="PATH",
+        help="Supply a newline-separated file with files and directories to "
+             "exclude."
+    )
+    parser.add_argument(
         "--dont-write-checksums", action="store_false", dest="write_checksums",
         help="Do not store samtools checksum output on disk."
     )
@@ -270,6 +308,14 @@ def cram_archiver_main(*args):
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
     logging.info(f"This is cram-archiver version: {__version__}.")
+    if arg.exclude is not None:
+        exclude_list = arg.exclude[:]
+    else:
+        exclude_list = []
+    if arg.exclude_list is not None:
+        with open(arg.exclude_list, "rt") as f:
+            exclude_list.extend(f.read().splitlines(keepends=False))
+
     cram_archiver(
         input_path=arg.path,
         reference_files=arg.reference,
@@ -280,4 +326,5 @@ def cram_archiver_main(*args):
         minimum_age_days=arg.minimum_age_days,
         delete=arg.delete,
         dry_run=arg.dry_run,
+        ignore_files=exclude_list,
     )

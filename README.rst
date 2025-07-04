@@ -85,8 +85,9 @@ Usage
 
     usage: cram-archiver [-h] -r REFERENCE [-t THREADS] [-d MINIMUM_AGE_DAYS]
                          [--delete] [--cram-version CRAM_VERSION]
+                         [--exclude EXCLUDE] [--exclude-list PATH]
                          [--dont-write-checksums] [--dont-write-index] [--dry-run]
-                         [-v] [-q]
+                         [-v] [-q] [--version]
                          PATH
 
     positional arguments:
@@ -110,6 +111,10 @@ Usage
       --delete              Delete BAM files after successful conversion.
       --cram-version CRAM_VERSION
                             CRAM version to use for CRAM conversion. Default: 3.0.
+      --exclude EXCLUDE     Exclude file or directory from conversion. Can be
+                            supplied multiple times.
+      --exclude-list PATH   Supply a newline-separated file with files and
+                            directories to exclude.
       --dont-write-checksums
                             Do not store samtools checksum output on disk.
       --dont-write-index    Do not write index files for CRAM files.
@@ -117,6 +122,7 @@ Usage
                             Perform no actions.
       -v, --verbose         Display more logging information.
       -q, --quiet           Display less logging information.
+      --version             show program's version number and exit
 
 On CRAM format settings
 =======================
