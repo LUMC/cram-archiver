@@ -309,6 +309,9 @@ def test_cram_archiver(
     assert cram3_index.exists() is write_index
     assert bam3_checksum.exists() is write_checksum_files
     assert cram3_checksum.exists() is write_checksum_files
+    assert ("Total saved size" in caplog.text) is delete
+    assert "Found 2 BAM files" in caplog.text
+    assert "Total generated CRAM size" in caplog.text
 
 
 @pytest.mark.parametrize(
