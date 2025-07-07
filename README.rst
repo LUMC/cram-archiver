@@ -12,7 +12,8 @@ disk space.
 
 Features:
 
-+ Automated recursive discovery of all ``.bam`` files in a directory.
++ Automated recursive discovery of all ``.bam`` files in a directory. Symbolic
+  links are ignored.
 + Multiple reference support. Cram-archiver loads in fasta indexed references
   and checks that the appropriate BAM file is matched to the appropriate
   reference using the contig and length information in the BAM header.
@@ -78,7 +79,7 @@ older than 30 days. Also, there are hg19 and hg38 BAM files in the directory.::
 
 If the ``--delete`` flag is added, all the converted BAM files will be deleted
 and just the CRAM files remain. This only happens when the conversion is
-succesful and the checksums match.
+successful and the checksums match.
 
 Usage
 =====
