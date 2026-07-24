@@ -119,6 +119,7 @@ def test_reference_id_init():
     TEST_DATA / "empty.cram",
     TEST_DATA / "empty.bam",
     TEST_DATA / "ucsc.hg19_nohap.fasta.fai",
+    TEST_DATA / "empty.repeats.bam",
 ])
 def test_reference_id_from_file(file):
     assert ReferenceID.from_file(str(file)) == ReferenceID(TEST_REFERENCE_ID_STRING)
