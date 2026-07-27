@@ -20,7 +20,6 @@ application.
 """
 import gzip
 import io
-import struct
 import subprocess
 import sys
 from typing import TextIO

@@ -23,7 +23,7 @@ if __name__ == "__main__":
         new_bam.write(n_ref_bytes)
         n_ref, = struct.unpack("<I", n_ref_bytes)
         for i in range(n_ref):
-            name_length_bytes =  bam.read(4)
+            name_length_bytes = bam.read(4)
             new_bam.write(name_length_bytes)
             name_length, = struct.unpack("<I", name_length_bytes)
             new_bam.write(bam.read(name_length))
@@ -31,8 +31,9 @@ if __name__ == "__main__":
 
     # BAM has been read. Now convert the bytes into a proper bgzipped bam
     with open("empty.repeats.bam", "wb") as result_bam:
-        process = subprocess.Popen(["bgzip", "--stdout", "--compress-level","9"], stdin=subprocess.PIPE, stdout = result_bam)
+        process = subprocess.Popen(
+            ["bgzip", "--stdout", "--compress-level", "9"],
+            stdin=subprocess.PIPE, stdout=result_bam)
     stdout, stderr = process.communicate(new_bam.getvalue())
     if process.returncode != 0:
         raise RuntimeError(stderr)
-
