@@ -532,3 +532,78 @@ def test_cram_archiver_no_reference_fai(tmp_path):
 def test_cram_archiver_no_bam_files(tmp_path, caplog):
     cram_archiver(str(tmp_path), [str(TEST_DATA / "NC012920.1.fasta")])
     assert "No BAM files found." in caplog.text
+
+
+
+def test_cram_archiver_fails_gracefully(
+        tmp_path,
+        caplog,
+):
+    """Check if the process keeps continuing until the end while finding
+    mistakes."""
+    cram_version = "3.0"
+    caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    cram1 = tmp_path / "bam1.cram"
+    cram2 = tmp_path / "bam2.cram"
+    cram3 = subdir / "bam3.cram"
+    bam1_checksum = tmp_path / "bam1.bam.checksum"
+    bam2_checksum = tmp_path / "bam2.bam.checksum"
+    bam3_checksum = subdir / "bam3.bam.checksum"
+    cram1_checksum = tmp_path / "bam1.cram.checksum"
+    cram2_checksum = tmp_path / "bam2.cram.checksum"
+    cram3_checksum = subdir / "bam3.cram.checksum"
+    cram1_index = tmp_path / "bam1.cram.crai"
+    cram2_index = tmp_path / "bam2.cram.crai"
+    cram3_index = subdir / "bam3.cram.crai"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    # bam2 will be corrupted
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam1)
+    shutil.copy(TEST_DATA / "NC012920.1.fasta", bam2)
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam3)
+    decoy1.touch()
+    decoy2.touch()
+    current_time = time.time()
+    os.utime(bam1, (current_time, current_time - 10_000))
+    os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
+    os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
+    with pytest.raises(RuntimeError) as error:
+        cram_archiver(
+            input_path=str(tmp_path),
+            reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+            cram_version=cram_version,
+            write_index=True,
+            write_checksum_files=True,
+            minimum_age_days=0,
+            delete=True,
+        )
+    assert "Errors occurred during conversions" in str(error)
+    assert ("WILL BE DELETED" in caplog.text) is True
+    assert (f"deleting BAM file: {bam1}" in caplog.text) is True
+    assert (f"deleting BAM file: {bam3}" in caplog.text) is True
+    assert bam1.exists() is False
+    assert bam2.exists() is True
+    assert bam3.exists() is False
+    assert cram1.exists()
+    assert cram1_index.exists()
+    assert bam1_checksum.exists()
+    assert cram1_checksum.exists()
+    assert get_file_cram_version(str(cram1)) == cram_version
+    assert not cram2.exists()  # Should have failed
+    assert cram2_index.exists() is False
+    assert bam2_checksum.exists() is False
+    assert cram2_checksum.exists() is False
+    assert cram3.exists()
+    assert get_file_cram_version(str(cram3)) == cram_version
+    assert cram3_index.exists() is True
+    assert bam3_checksum.exists() is True
+    assert cram3_checksum.exists() is True
+    assert ("Total saved size" in caplog.text) is True
+    assert "Found 3 BAM files" in caplog.text
+    assert "Total generated CRAM size" in caplog.text
+
