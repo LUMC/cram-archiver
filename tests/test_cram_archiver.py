@@ -216,6 +216,39 @@ def test_find_bam_files_exclude(tmp_path: Path, caplog, debug):
     assert (str(decoy2) in caplog.text) is debug
 
 
+@pytest.mark.parametrize("debug", [True, False])
+def test_find_bam_files_exclude_ext(tmp_path: Path, caplog, debug):
+    if debug:
+        caplog.set_level(logging.DEBUG)
+    else:
+        caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1_repeats = tmp_path / "bam1.repeats.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    bam1_repeats.touch()
+    bam2.touch()
+    bam3.touch()
+    decoy1.touch()
+    decoy2.touch()
+    result = list(find_bam_files(
+        str(tmp_path),
+        # Make the timestamp very big to avoid testing issues.
+        older_than_timestamp=math.inf,
+        ignore_extensions=[".repeats.bam"]
+    ))
+    assert set(result) == {str(bam2), str(bam3)}
+    assert str(bam1_repeats) in caplog.text
+    assert "Ignoring" in caplog.text
+    assert (str(bam2) in caplog.text) is debug
+    assert (str(bam3) in caplog.text) is debug
+    assert (str(decoy1) in caplog.text) is debug
+    assert (str(decoy2) in caplog.text) is debug
+
+
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete",
      "use_cli", "ignore_extensions"],
@@ -289,7 +322,7 @@ def test_cram_archiver(
         if delete:
             args.append("--delete")
         for ext in ignore_extensions:
-            args.append("--ignore-extension")
+            args.append("--exclude-extension")
             args.append(ext)
         cram_archiver_main(*args)
     else:
