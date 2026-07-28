@@ -9,6 +9,8 @@ Changelog
 
 develop
 ------------------
++ Add a ``--exclude-extension`` option to exclude extensions. Useful for
+  example for DRAGEN ``.repeats.bam`` files, which are very small.
 + Fix bug where cram-archiver would crash without proceeding to process other
   BAM files when an unknown reference was encountered.
 + Fix issue with references not being read from BAM's reference binary blob if

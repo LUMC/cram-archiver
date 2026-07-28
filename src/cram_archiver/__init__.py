@@ -339,7 +339,8 @@ def argument_parser() -> argparse.ArgumentParser:
         "--exclude-extension", metavar="EXTENSION",
         action="append",
         help="Exclude files with this extension from conversion. For example "
-             "'.repeats.bam' for DRAGEN-generated repeats BAM files."
+             "'.repeats.bam' for DRAGEN-generated repeats BAM files. "
+             "Can be supplied multiple times."
     )
     parser.add_argument(
         "--dont-write-checksums", action="store_false", dest="write_checksums",
