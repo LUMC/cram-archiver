@@ -9,6 +9,8 @@ Changelog
 
 develop
 ------------------
++ Fix bug where cram-archiver would crash without proceeding to process other
+  BAM files when an unknown reference was encountered.
 + Fix issue with references not being read from BAM's reference binary blob if
   ``@SQ`` header lines are not present.
 
