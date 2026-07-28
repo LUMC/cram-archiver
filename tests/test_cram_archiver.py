@@ -217,13 +217,15 @@ def test_find_bam_files_exclude(tmp_path: Path, caplog, debug):
 
 
 @pytest.mark.parametrize(
-    ["cram_version", "write_index", "write_checksum_files", "delete", "use_cli"],
+    ["cram_version", "write_index", "write_checksum_files", "delete",
+     "use_cli", "ignore_extensions"],
     itertools.product(
         ["3.0", "3.1"],
         [True, False],
         [True, False],
         [True, False],
         [True, False],
+        [[], [".repeats.bam"]],
     )
 )
 def test_cram_archiver(
@@ -233,34 +235,42 @@ def test_cram_archiver(
         delete,
         use_cli,
         tmp_path,
+        ignore_extensions,
         caplog,
 ):
     caplog.set_level(logging.INFO)
     subdir = tmp_path / "subdir"
     subdir.mkdir()
+    bam1_repeats = tmp_path / "bam1.repeats.bam"
     bam1 = tmp_path / "bam1.bam"
     bam2 = tmp_path / "bam2.bam"
     bam3 = subdir / "bam3.bam"
+    cram1_repeats = tmp_path / "bam1.repeats.cram"
     cram1 = tmp_path / "bam1.cram"
     cram2 = tmp_path / "bam2.cram"
     cram3 = subdir / "bam3.cram"
+    bam1_repeats_checksum = tmp_path / "bam1.repeats.bam.checksum"
     bam1_checksum = tmp_path / "bam1.bam.checksum"
     bam2_checksum = tmp_path / "bam2.bam.checksum"
     bam3_checksum = subdir / "bam3.bam.checksum"
+    cram1_repeats_checksum = tmp_path / "bam1.repeats.cram.checksum"
     cram1_checksum = tmp_path / "bam1.cram.checksum"
     cram2_checksum = tmp_path / "bam2.cram.checksum"
     cram3_checksum = subdir / "bam3.cram.checksum"
+    cram1_repeats_index = tmp_path / "bam1.repeats.cram.crai"
     cram1_index = tmp_path / "bam1.cram.crai"
     cram2_index = tmp_path / "bam2.cram.crai"
     cram3_index = subdir / "bam3.cram.crai"
     decoy1 = subdir / "decoy1.txt"
     decoy2 = tmp_path / "decoy2.txt"
+    shutil.copy(TEST_DATA / "GM24385_1.repeats.bam", bam1_repeats)
     shutil.copy(TEST_DATA / "GM24385_1.bam", bam1)
     shutil.copy(TEST_DATA / "GM24385_1.bam", bam2)
     shutil.copy(TEST_DATA / "GM24385_1.bam", bam3)
     decoy1.touch()
     decoy2.touch()
     current_time = time.time()
+    os.utime(bam1_repeats, (current_time, current_time - 100_000))  # More than 1 day
     os.utime(bam1, (current_time, current_time - 10_000))
     os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
     os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
@@ -278,6 +288,9 @@ def test_cram_archiver(
             args.append("--dont-write-checksums")
         if delete:
             args.append("--delete")
+        for ext in ignore_extensions:
+            args.append("--ignore-extension")
+            args.append(ext)
         cram_archiver_main(*args)
     else:
         cram_archiver(
@@ -288,6 +301,7 @@ def test_cram_archiver(
             write_checksum_files=write_checksum_files,
             minimum_age_days=1,
             delete=delete,
+            ignore_extensions=ignore_extensions
         )
     assert ("WILL BE DELETED" in caplog.text) is delete
     assert (f"deleting BAM file: {bam2}" in caplog.text) is delete
@@ -299,6 +313,20 @@ def test_cram_archiver(
     assert not cram1_index.exists()
     assert not bam1_checksum.exists()
     assert not cram1_checksum.exists()
+    if ignore_extensions:
+        assert bam1_repeats.exists()
+        assert not cram1_repeats.exists()
+        assert not cram1_repeats_index.exists()
+        assert not cram1_repeats_checksum.exists()
+        assert not bam1_repeats_checksum.exists()
+        assert "Found 2 BAM files" in caplog.text
+    else:
+        assert bam1_repeats.exists() is not delete
+        assert cram1_repeats.exists()
+        assert cram1_repeats_index.exists() is write_index
+        assert cram1_repeats_checksum.exists() is write_checksum_files
+        assert bam1_repeats_checksum.exists() is write_checksum_files
+        assert "Found 3 BAM files" in caplog.text
     assert cram2.exists()
     assert get_file_cram_version(str(cram2)) == cram_version
     assert cram2_index.exists() is write_index
@@ -310,7 +338,6 @@ def test_cram_archiver(
     assert bam3_checksum.exists() is write_checksum_files
     assert cram3_checksum.exists() is write_checksum_files
     assert ("Total saved size" in caplog.text) is delete
-    assert "Found 2 BAM files" in caplog.text
     assert "Total generated CRAM size" in caplog.text
 
 
