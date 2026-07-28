@@ -84,38 +84,47 @@ successful and the checksums match.
 Usage
 =====
 
-    usage: cram-archiver [-h] -r REFERENCE [-t THREADS] [-d MINIMUM_AGE_DAYS]
-                         [--delete] [--cram-version CRAM_VERSION]
-                         [--exclude EXCLUDE] [--exclude-list PATH]
-                         [--dont-write-checksums] [--dont-write-index] [--dry-run]
-                         [-v] [-q] [--version]
+    usage: cram-archiver [-h] -r REFERENCE [-t THREADS]
+                         [-d MINIMUM_AGE_DAYS] [--delete]
+                         [--cram-version CRAM_VERSION] [--exclude EXCLUDE]
+                         [--exclude-list PATH]
+                         [--exclude-extension EXTENSION]
+                         [--dont-write-checksums] [--dont-write-index]
+                         [--dry-run] [-v] [-q] [--version]
                          PATH
 
     positional arguments:
       PATH                  Path to BAM file or directory to be recursively
                             searched.
-
+"
     options:
       -h, --help            show this help message and exit
-      -r REFERENCE, --reference REFERENCE
-                            Reference to be used for CRAM conversion. Can be used
-                            multiple times. Reference will be checked with the BAM
-                            file.
-      -t THREADS, --threads THREADS
+      -r, --reference REFERENCE
+                            Reference to be used for CRAM conversion. Can be
+                            used multiple times. Reference will be checked
+                            with the BAM file.
+      -t, --threads THREADS
                             The number of threads used for conversion and
                             checksumming.Default: 1.
-      -d MINIMUM_AGE_DAYS, --minimum-age-days MINIMUM_AGE_DAYS
-                            The minimum last modification of the BAM file in days
-                            prior. This assumes the system clock timezone matches
-                            that of the file while also assuming that every day
-                            has 24x60x60 seconds. Default 0.
+      -d, --minimum-age-days MINIMUM_AGE_DAYS
+                            The minimum last modification of the BAM file in
+                            days prior. This assumes the system clock
+                            timezone matches that of the file while also
+                            assuming that every day has 24x60x60 seconds.
+                            Default 0.
       --delete              Delete BAM files after successful conversion.
       --cram-version CRAM_VERSION
-                            CRAM version to use for CRAM conversion. Default: 3.0.
-      --exclude EXCLUDE     Exclude file or directory from conversion. Can be
-                            supplied multiple times.
+                            CRAM version to use for CRAM conversion.
+                            Default: 3.0.
+      --exclude EXCLUDE     Exclude file or directory from conversion. Can
+                            be supplied multiple times.
       --exclude-list PATH   Supply a newline-separated file with files and
                             directories to exclude.
+      --exclude-extension EXTENSION
+                            Exclude files with this extension from
+                            conversion. For example '.repeats.bam' for
+                            DRAGEN-generated repeats BAM files. Can be
+                            supplied multiple times.
       --dont-write-checksums
                             Do not store samtools checksum output on disk.
       --dont-write-index    Do not write index files for CRAM files.

@@ -4,10 +4,13 @@ import gzip
 import io
 import struct
 import subprocess
+import sys
 
 if __name__ == "__main__":
+    bam_file = sys.argv[1]
+    output_bam = bam_file.removesuffix(".bam") + ".repeats.bam"
     new_bam = io.BytesIO()
-    with gzip.open("empty.bam", "rb") as bam:
+    with gzip.open(bam_file, "rb") as bam:
         assert b"BAM\01" == bam.read(4)
         new_bam.write(b"BAM\01")
         l_text, = struct.unpack("<I", bam.read(4))
@@ -30,7 +33,7 @@ if __name__ == "__main__":
             new_bam.write(bam.read(4))  # length bytes
 
     # BAM has been read. Now convert the bytes into a proper bgzipped bam
-    with open("empty.repeats.bam", "wb") as result_bam:
+    with open(output_bam, "wb") as result_bam:
         process = subprocess.Popen(
             ["bgzip", "--stdout", "--compress-level", "9"],
             stdin=subprocess.PIPE, stdout=result_bam)

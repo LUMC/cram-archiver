@@ -20,7 +20,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Iterator, Optional, Sequence, Set
+from typing import Dict, Iterable, Iterator, Optional, Sequence, Set
 
 from ._version import __version__
 from .references import ReferenceID
@@ -139,26 +139,39 @@ def _find_bam_files_dirscan(
         input_dir: str,
         older_than_timestamp: float,
         ignore_files: Set[str],
+        ignore_extensions: Iterable[str],
         follow_symlinks: bool,
 ):
     for entry in os.scandir(input_dir):
         if entry.path in ignore_files:
             logging.info(f"Ignoring {entry.path}")
             continue
+        if any(entry.path.endswith(ext) for ext in ignore_extensions):
+            logging.info(f"Ignoring {entry.path}")
+            continue
         logging.debug(f"Searching: {entry.path}")
         if entry.is_file(follow_symlinks=follow_symlinks):
             if entry.name.endswith(".bam"):
                 yield from handle_file_age(
-                    entry.path, entry.stat().st_mtime, older_than_timestamp)
+                    file=entry.path,
+                    file_mtime=entry.stat().st_mtime,
+                    older_than_timestamp=older_than_timestamp
+                )
         elif entry.is_dir(follow_symlinks=follow_symlinks):
             yield from _find_bam_files_dirscan(
-                entry.path, older_than_timestamp, ignore_files, follow_symlinks)
+                input_dir=entry.path,
+                older_than_timestamp=older_than_timestamp,
+                ignore_files=ignore_files,
+                ignore_extensions=ignore_extensions,
+                follow_symlinks=follow_symlinks
+            )
 
 
 def find_bam_files(
         input_path: str,
         older_than_timestamp: float = time.time(),
         ignore_files: Optional[Sequence[str]] = None,
+        ignore_extensions: Optional[Sequence[str]] = None,
         follow_symlinks=False,
 ) -> Iterator[str]:
     # Make input path and ignore files absolute. This also deals with trailing
@@ -168,7 +181,12 @@ def find_bam_files(
         ignore_set = {os.path.abspath(p) for p in ignore_files}
     else:
         ignore_set = set()
+    if ignore_extensions is None:
+        ignore_extensions = tuple()
     if input_path in ignore_set:
+        logging.info(f"Ignoring {input_path}")
+        return
+    if any(input_path.endswith(ext) for ext in ignore_extensions):
         logging.info(f"Ignoring {input_path}")
         return
     if os.path.islink(input_path) and not follow_symlinks:
@@ -178,7 +196,11 @@ def find_bam_files(
             input_path, os.path.getmtime(input_path), older_than_timestamp)
     elif os.path.isdir(input_path):
         yield from _find_bam_files_dirscan(
-            input_path, older_than_timestamp, ignore_set, follow_symlinks
+            input_dir=input_path,
+            older_than_timestamp=older_than_timestamp,
+            ignore_files=ignore_set,
+            ignore_extensions=ignore_extensions,
+            follow_symlinks=follow_symlinks
         )
 
 
@@ -192,7 +214,8 @@ def cram_archiver(
         minimum_age_days: int = 0,
         delete: bool = False,
         dry_run: bool = False,
-        ignore_files: Optional[Sequence[str]] = None
+        ignore_files: Optional[Sequence[str]] = None,
+        ignore_extensions: Optional[Sequence[str]] = None,
 ):
     if delete and not dry_run:
         logging.warning(
@@ -209,7 +232,12 @@ def cram_archiver(
         ref_id = ReferenceID.from_file(fai)
         ref_dicts[ref_id] = reference
 
-    bam_files = find_bam_files(input_path, older_than_timestamp, ignore_files)
+    bam_files = find_bam_files(
+        input_path=input_path,
+        older_than_timestamp=older_than_timestamp,
+        ignore_files=ignore_files,
+        ignore_extensions=ignore_extensions,
+    )
     number_of_bam_files = 0
     errors = []
     total_bam_size = 0
@@ -308,6 +336,13 @@ def argument_parser() -> argparse.ArgumentParser:
              "exclude."
     )
     parser.add_argument(
+        "--exclude-extension", metavar="EXTENSION",
+        action="append",
+        help="Exclude files with this extension from conversion. For example "
+             "'.repeats.bam' for DRAGEN-generated repeats BAM files. "
+             "Can be supplied multiple times."
+    )
+    parser.add_argument(
         "--dont-write-checksums", action="store_false", dest="write_checksums",
         help="Do not store samtools checksum output on disk."
     )
@@ -366,4 +401,5 @@ def cram_archiver_main(*args):
         delete=arg.delete,
         dry_run=arg.dry_run,
         ignore_files=exclude_list,
+        ignore_extensions=arg.exclude_extension,
     )
