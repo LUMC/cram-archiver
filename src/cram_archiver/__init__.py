@@ -34,6 +34,10 @@ DEFAULT_LOG_LEVEL = logging.INFO
 DEFAULT_MINIMUM_AGE_DAYS = 0
 
 
+class ReferenceLookupError(KeyError):
+    pass
+
+
 def convert_to_cram(
         input_file: str,
         output_file: str,
@@ -89,7 +93,13 @@ def convert_to_cram_and_check(
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
 ) -> str:
     reference_id = ReferenceID.from_file(input_file)
-    reference = reference_id_to_path[reference_id]
+    try:
+        reference = reference_id_to_path[reference_id]
+    except KeyError:
+        raise ReferenceLookupError(
+            f"Could not find reference for {input_file}. Reference ID: "
+            f"{reference_id!r}."
+        )
     output_file = str(Path(input_file).parent / Path(input_file).stem) + ".cram"
     logging.info(f"Convert '{input_file}' to '{output_file}'.")
     convert_to_cram(input_file, output_file, reference, threads, cram_version,
@@ -231,7 +241,7 @@ def cram_archiver(
                     f"space: {(bam_size - cram_size) / (1024 ** 3):.2f} GiB."
                 )
                 os.unlink(bam)
-        except (FileNotFoundError, RuntimeError) as error:
+        except (FileNotFoundError, RuntimeError, ReferenceLookupError) as error:
             logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
             errors.append(error)
     if number_of_bam_files == 0:
