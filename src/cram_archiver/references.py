@@ -52,6 +52,13 @@ class ReferenceID:
     def id(self) -> str:
         return self._id
 
+    def __repr__(self) -> str:
+        if len(self._id) < 101:
+            return repr(self._id)
+        first_part = repr(self._id[:50])
+        last_part = repr(self._id[-50:])
+        return f"{first_part}[...]{last_part}"
+
     @classmethod
     def from_file(cls, file: str):
         """

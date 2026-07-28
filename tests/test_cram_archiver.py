@@ -534,7 +534,6 @@ def test_cram_archiver_no_bam_files(tmp_path, caplog):
     assert "No BAM files found." in caplog.text
 
 
-
 def test_cram_archiver_fails_gracefully(
         tmp_path,
         caplog,
@@ -598,6 +597,7 @@ def test_cram_archiver_fails_gracefully(
     assert bam2.exists()
     assert not bam3.exists()
     assert not cram0.exists()
+    assert not cram0_index.exists()
     assert not bam0_checksum.exists()
     assert not cram0_checksum.exists()
     assert cram1.exists()
@@ -615,6 +615,5 @@ def test_cram_archiver_fails_gracefully(
     assert bam3_checksum.exists()
     assert cram3_checksum.exists()
     assert ("Total saved size" in caplog.text)
-    assert "Found 3 BAM files" in caplog.text
+    assert "Found 4 BAM files" in caplog.text
     assert "Total generated CRAM size" in caplog.text
-
