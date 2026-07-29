@@ -22,7 +22,11 @@ Features:
   if the checksum matches.
 + Parallel. Can use the ``--threads`` flag to set the number of threads used by
   ``samtools`` and start multiple ``samtools`` processes in parallel by using
-  the ``--processes`` flag.
+  the ``--processes`` flag. In general, on storage systems that prefer
+  sequential input and output (hard disks for instance) using ``--threads`` is
+  preferred as only one process is reading and writing. On storage systems that
+  can deal with massively parallel read and write tasks using more processes
+  does scale much better in terms of CPU core utilization.
 + On by default: writes checksum files for manual verification.
 + On by default: writes CRAM indexes.
 + Optional: deletes BAM file after conversion.

@@ -414,6 +414,8 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p", "--processes", type=int, default=DEFAULT_PROCESSES,
         help=f"The number of parallel samtools processes that are used. "
+             f"Multiply this with number of threads to get the number of used "
+             f"CPU cores."
              f"Default: {DEFAULT_PROCESSES}."
     )
     parser.add_argument(
