@@ -9,6 +9,7 @@ Changelog
 
 develop
 ------------------
++ Add a ``processes`` flag to run multiple samtools processes in parallel.
 + Add a ``--exclude-extension`` option to exclude extensions. Useful for
   example for DRAGEN ``.repeats.bam`` files, which are very small.
 + Fix bug where cram-archiver would crash without proceeding to process other

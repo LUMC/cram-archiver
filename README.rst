@@ -20,6 +20,9 @@ Features:
 + Performs CRAM conversion using ``samtools view``.
 + Performs ``samtools checksum --all`` on the BAM and CRAM file and checks
   if the checksum matches.
++ Parallel. Can use the ``--threads`` flag to set the number of threads used by
+  ``samtools`` and start multiple ``samtools`` processes in parallel by using
+  the ``--processes`` flag.
 + On by default: writes checksum files for manual verification.
 + On by default: writes CRAM indexes.
 + Optional: deletes BAM file after conversion.
@@ -84,7 +87,7 @@ successful and the checksums match.
 Usage
 =====
 
-    usage: cram-archiver [-h] -r REFERENCE [-t THREADS]
+    usage: cram-archiver [-h] -r REFERENCE [-t THREADS] [-p PROCESSES]
                          [-d MINIMUM_AGE_DAYS] [--delete]
                          [--cram-version CRAM_VERSION] [--exclude EXCLUDE]
                          [--exclude-list PATH]
@@ -96,7 +99,7 @@ Usage
     positional arguments:
       PATH                  Path to BAM file or directory to be recursively
                             searched.
-"
+
     options:
       -h, --help            show this help message and exit
       -r, --reference REFERENCE
@@ -104,8 +107,11 @@ Usage
                             used multiple times. Reference will be checked
                             with the BAM file.
       -t, --threads THREADS
-                            The number of threads used for conversion and
-                            checksumming.Default: 1.
+                            The number of threads used by samtools for
+                            conversion and checksumming. Default: 1.
+      -p, --processes PROCESSES
+                            The number of parallel samtools processes that
+                            are used. Default: 1.
       -d, --minimum-age-days MINIMUM_AGE_DAYS
                             The minimum last modification of the BAM file in
                             days prior. This assumes the system clock

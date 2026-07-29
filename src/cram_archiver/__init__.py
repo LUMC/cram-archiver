@@ -408,7 +408,7 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-t", "--threads", type=int, default=DEFAULT_THREADS,
         help=f"The number of threads used by samtools for conversion and "
-             f"checksumming."
+             f"checksumming. "
              f"Default: {DEFAULT_THREADS}."
     )
     parser.add_argument(
