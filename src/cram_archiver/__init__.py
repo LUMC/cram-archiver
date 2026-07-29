@@ -341,12 +341,12 @@ def cram_archiver(
         ref_id = ReferenceID.from_file(fai)
         ref_dicts[ref_id] = reference
 
-    bam_files = list(find_bam_files(
+    bam_files = find_bam_files(
         input_path=input_path,
         older_than_timestamp=older_than_timestamp,
         ignore_files=ignore_files,
         ignore_extensions=ignore_extensions,
-    ))
+    )
 
     cram_converter = CramConverter(
         reference_files=reference_files,
