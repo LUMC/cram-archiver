@@ -251,7 +251,7 @@ def test_find_bam_files_exclude_ext(tmp_path: Path, caplog, debug):
 
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete",
-     "use_cli", "ignore_extensions", "threads"],
+     "use_cli", "ignore_extensions", "processes"],
     list(itertools.product(
         ["3.0", "3.1"],
         [True, False],
@@ -269,7 +269,7 @@ def test_cram_archiver(
         delete,
         use_cli,
         tmp_path,
-        threads,
+        processes,
         ignore_extensions,
         caplog,
 ):
@@ -314,7 +314,7 @@ def test_cram_archiver(
             str(tmp_path),
             "--reference", str(TEST_DATA / "NC012920.1.fasta"),
             "--cram-version", cram_version,
-            "--threads", str(threads),
+            "--processes", str(processes),
             "-vvvv",
             "--minimum-age-days", "1"
         ]
@@ -337,7 +337,7 @@ def test_cram_archiver(
             write_checksum_files=write_checksum_files,
             minimum_age_days=1,
             delete=delete,
-            threads=threads,
+            processes=processes,
             ignore_extensions=ignore_extensions
         )
     assert ("WILL BE DELETED" in caplog.text) is delete

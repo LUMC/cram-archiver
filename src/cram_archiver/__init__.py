@@ -30,6 +30,7 @@ from .references import ReferenceID
 # 3.1 Not supported by some tools currently (2025)
 DEFAULT_CRAM_VERSION = "3.0"
 DEFAULT_THREADS = 1
+DEFAULT_PROCESSES = 1
 DEFAULT_WRITE_INDEX = True
 DEFAULT_WRITE_CHECKSUM_FILES = True
 DEFAULT_LOG_LEVEL = logging.INFO
@@ -211,6 +212,7 @@ class CramConverter:
     def __init__(self,
                  reference_files: Sequence[str],
                  threads: int = DEFAULT_THREADS,
+                 processes: int = DEFAULT_PROCESSES,
                  cram_version: str = DEFAULT_CRAM_VERSION,
                  write_index: bool = DEFAULT_WRITE_INDEX,
                  write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
@@ -218,7 +220,8 @@ class CramConverter:
                  delete: bool = False,
                  dry_run: bool = False,
                  ):
-        self._threads = threads
+        self._processes = processes
+        self.threads = threads
         self.queue: queue.Queue[str] = queue.Queue()
         self.total_bam_size: int = 0
         self.total_cram_size: int = 0
@@ -243,7 +246,7 @@ class CramConverter:
 
     def start(self):
         self.running = True
-        for _ in range(self._threads):
+        for _ in range(self._processes):
             worker = threading.Thread(target=self.worker_func)
             self.workers.append(worker)
             worker.start()
@@ -280,7 +283,7 @@ class CramConverter:
                 cram_file = convert_to_cram_and_check(
                     input_file=bam,
                     reference_id_to_path=self.ref_dicts,
-                    threads=1,
+                    threads=self.threads,
                     cram_version=self.cram_version,
                     write_index=self.write_index,
                     write_checksum_files=self.write_checksum_files,
@@ -313,6 +316,7 @@ def cram_archiver(
         input_path: str,
         reference_files: Sequence[str],
         threads: int = DEFAULT_THREADS,
+        processes: int = DEFAULT_PROCESSES,
         cram_version: str = DEFAULT_CRAM_VERSION,
         write_index: bool = DEFAULT_WRITE_INDEX,
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
@@ -347,6 +351,7 @@ def cram_archiver(
     cram_converter = CramConverter(
         reference_files=reference_files,
         threads=threads,
+        processes=processes,
         cram_version=cram_version,
         write_index=write_index,
         write_checksum_files=write_checksum_files,
@@ -402,8 +407,14 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-t", "--threads", type=int, default=DEFAULT_THREADS,
-        help=f"The number of threads used for conversion and checksumming."
+        help=f"The number of threads used by samtools for conversion and "
+             f"checksumming."
              f"Default: {DEFAULT_THREADS}."
+    )
+    parser.add_argument(
+        "-p", "--processes", type=int, default=DEFAULT_PROCESSES,
+        help=f"The number of parallel samtools processes that are used. "
+             f"Default: {DEFAULT_PROCESSES}."
     )
     parser.add_argument(
         "-d", "--minimum-age-days", type=int,
@@ -491,6 +502,7 @@ def cram_archiver_main(*args):
         input_path=arg.path,
         reference_files=arg.reference,
         threads=arg.threads,
+        processes=arg.processes,
         cram_version=arg.cram_version,
         write_index=arg.write_index,
         write_checksum_files=arg.write_checksums,
