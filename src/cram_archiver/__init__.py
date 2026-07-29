@@ -263,9 +263,11 @@ class CramConverter:
                 bam = self.queue.get_nowait()
             except queue.Empty:
                 return
-            bam_name = os.path.basename(bam)
-            bam_size = os.path.getsize(bam)
             try:
+                # Capture everything in the try block to prevent threads from
+                # hanging on error.
+                bam_name = os.path.basename(bam)
+                bam_size = os.path.getsize(bam)
                 cram_file = convert_to_cram_and_check(
                     input_file=bam,
                     reference_id_to_path=self.ref_dicts,
@@ -288,9 +290,10 @@ class CramConverter:
                         f"space: {(bam_size - cram_size) / (1024 ** 3):.2f} GiB."
                     )
                     os.unlink(bam)
-            except (FileNotFoundError, RuntimeError,
-                    ReferenceLookupError) as error:
-                logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
+            # Catch all is intentional. This way the thread can never crash and
+            # cause hanging.
+            except Exception as error:
+                logging.error(f"Conversion unsuccessful: {bam}. {repr(error)}")
                 with self.lock:
                     self.errors.append(error)
             finally:
