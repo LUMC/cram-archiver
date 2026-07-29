@@ -70,7 +70,7 @@ def test_convert_to_cram(tmp_path):
 
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files"],
-    itertools.product(["3.0", "3.1"], [True, False], [True, False])
+    list(itertools.product(["3.0", "3.1"], [True, False], [True, False]))
 )
 def test_convert_to_cram_and_check(
         tmp_path, caplog, cram_version, write_index, write_checksum_files):
@@ -252,7 +252,7 @@ def test_find_bam_files_exclude_ext(tmp_path: Path, caplog, debug):
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete",
      "use_cli", "ignore_extensions", "threads"],
-    itertools.product(
+    list(itertools.product(
         ["3.0", "3.1"],
         [True, False],
         [True, False],
@@ -260,7 +260,7 @@ def test_find_bam_files_exclude_ext(tmp_path: Path, caplog, debug):
         [True, False],
         [[], [".repeats.bam"]],
         [1, 4]
-    )
+    ))
 )
 def test_cram_archiver(
         cram_version,
@@ -380,13 +380,13 @@ def test_cram_archiver(
 
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete", "use_cli"],
-    itertools.product(
+    list(itertools.product(
         ["3.0", "3.1"],
         [True, False],
         [True, False],
         [True, False],
         [True, False],
-    )
+    ))
 )
 def test_cram_archiver_single_file(
         cram_version,
@@ -440,9 +440,9 @@ def test_cram_archiver_single_file(
 
 @pytest.mark.parametrize(
     ["delete", "write_checksum_files", "write_index"],
-    itertools.product(
+    list(itertools.product(
         [True, False], [True, False], [True, False]
-    )
+    ))
 )
 def test_cram_archiver_dry_run(tmp_path, capsys, delete,
                                write_checksum_files,
