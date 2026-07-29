@@ -216,10 +216,12 @@ class CramConverter:
                  write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
                  minimum_age_days: int = 0,
                  delete: bool = False,
+                 dry_run: bool = False,
                  ):
         self._threads = threads
         self.queue: queue.Queue[str] = queue.Queue()
-        self.out_sizes: List[int] = []
+        self.total_bam_size: int = 0
+        self.total_cram_size: int = 0
         self.lock = threading.Lock()
         self.errors: List[Exception] = []
         self.ref_dicts: Dict[ReferenceID, str] = {}
@@ -228,6 +230,7 @@ class CramConverter:
         self.write_checksum_files = write_checksum_files
         self.minimum_age_days = minimum_age_days
         self.delete = delete
+        self.dry_run = dry_run
         for reference in reference_files:
             fai = reference + ".fai"
             if not os.path.exists(fai):
@@ -260,14 +263,20 @@ class CramConverter:
     def worker_func(self):
         while self.running:
             try:
-                bam = self.queue.get_nowait()
+                bam = self.queue.get(timeout=0.01)
             except queue.Empty:
-                return
+                continue
             try:
                 # Capture everything in the try block to prevent threads from
                 # hanging on error.
                 bam_name = os.path.basename(bam)
                 bam_size = os.path.getsize(bam)
+                with self.lock:
+                    self.total_bam_size += bam_size
+
+                if self.dry_run:
+                    continue
+
                 cram_file = convert_to_cram_and_check(
                     input_file=bam,
                     reference_id_to_path=self.ref_dicts,
@@ -279,7 +288,7 @@ class CramConverter:
                 cram_name = os.path.basename(cram_file)
                 cram_size = os.path.getsize(cram_file)
                 with self.lock:
-                    self.out_sizes.append(cram_size)
+                    self.total_cram_size += cram_size
                 logging.info(
                     f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
                 logging.info(
@@ -343,27 +352,25 @@ def cram_archiver(
         write_checksum_files=write_checksum_files,
         minimum_age_days=minimum_age_days,
         delete=delete,
+        dry_run=dry_run,
     )
     number_of_bam_files = 0
-    total_bam_size = 0
-    total_cram_size = 0
-    for number_of_bam_files, bam in enumerate(bam_files, start=1):
-        bam_size = os.path.getsize(bam)
-        total_bam_size += bam_size
-        if dry_run:
-            print(bam)
-        else:
+    cram_converter.start()
+    try:
+        for number_of_bam_files, bam in enumerate(bam_files, start=1):
             cram_converter.add(bam)
+            if dry_run:
+                print(bam)
+        cram_converter.wait()
+    finally:
+        cram_converter.stop()
 
     if number_of_bam_files == 0:
         logging.warning("No BAM files found. Exiting.")
         return
 
-    if not dry_run:
-        cram_converter.start()
-        cram_converter.wait()
-        cram_converter.stop()
-        total_cram_size = sum(cram_converter.out_sizes)
+    total_bam_size = cram_converter.total_bam_size
+    total_cram_size = cram_converter.total_bam_size
 
     logging.info(
         f"Found {number_of_bam_files} BAM files of "
