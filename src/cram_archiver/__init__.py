@@ -17,10 +17,12 @@
 import argparse
 import logging
 import os
+import queue
 import subprocess
+import threading
 import time
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, Optional, Sequence, Set
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set
 
 from ._version import __version__
 from .references import ReferenceID
@@ -28,6 +30,7 @@ from .references import ReferenceID
 # 3.1 Not supported by some tools currently (2025)
 DEFAULT_CRAM_VERSION = "3.0"
 DEFAULT_THREADS = 1
+DEFAULT_PROCESSES = 1
 DEFAULT_WRITE_INDEX = True
 DEFAULT_WRITE_CHECKSUM_FILES = True
 DEFAULT_LOG_LEVEL = logging.INFO
@@ -100,7 +103,8 @@ def convert_to_cram_and_check(
             f"Could not find reference for {input_file}. Reference ID: "
             f"{reference_id!r}."
         )
-    output_file = str(Path(input_file).parent / Path(input_file).stem) + ".cram"
+    output_file = str(
+        Path(input_file).parent / Path(input_file).stem) + ".cram"
     logging.info(f"Convert '{input_file}' to '{output_file}'.")
     convert_to_cram(input_file, output_file, reference, threads, cram_version,
                     write_index)
@@ -204,10 +208,115 @@ def find_bam_files(
         )
 
 
+class CramConverter:
+    def __init__(self,
+                 reference_files: Sequence[str],
+                 threads: int = DEFAULT_THREADS,
+                 processes: int = DEFAULT_PROCESSES,
+                 cram_version: str = DEFAULT_CRAM_VERSION,
+                 write_index: bool = DEFAULT_WRITE_INDEX,
+                 write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
+                 minimum_age_days: int = 0,
+                 delete: bool = False,
+                 dry_run: bool = False,
+                 ):
+        self._processes = processes
+        self.threads = threads
+        self.queue: queue.Queue[str] = queue.Queue()
+        self.total_bam_size: int = 0
+        self.total_cram_size: int = 0
+        self.lock = threading.Lock()
+        self.errors: List[Exception] = []
+        self.ref_dicts: Dict[ReferenceID, str] = {}
+        self.cram_version = cram_version
+        self.write_index = write_index
+        self.write_checksum_files = write_checksum_files
+        self.minimum_age_days = minimum_age_days
+        self.delete = delete
+        self.dry_run = dry_run
+        for reference in reference_files:
+            fai = reference + ".fai"
+            if not os.path.exists(fai):
+                raise FileNotFoundError(
+                    f"Fasta index file for {reference} could not be found.")
+            ref_id = ReferenceID.from_file(fai)
+            self.ref_dicts[ref_id] = reference
+        self.running = False
+        self.workers: List[threading.Thread] = []
+
+    def start(self):
+        self.running = True
+        for _ in range(self._processes):
+            worker = threading.Thread(target=self.worker_func)
+            self.workers.append(worker)
+            worker.start()
+
+    def stop(self):
+        self.running = False
+        for worker in self.workers:
+            worker.join()
+        self.workers = []
+
+    def wait(self):
+        self.queue.join()
+
+    def add(self, bam_file: str):
+        self.queue.put(bam_file)
+
+    def worker_func(self):
+        while self.running:
+            try:
+                bam = self.queue.get(timeout=0.01)
+            except queue.Empty:
+                continue
+            try:
+                # Capture everything in the try block to prevent threads from
+                # hanging on error.
+                bam_name = os.path.basename(bam)
+                bam_size = os.path.getsize(bam)
+                with self.lock:
+                    self.total_bam_size += bam_size
+
+                if self.dry_run:
+                    continue
+
+                cram_file = convert_to_cram_and_check(
+                    input_file=bam,
+                    reference_id_to_path=self.ref_dicts,
+                    threads=self.threads,
+                    cram_version=self.cram_version,
+                    write_index=self.write_index,
+                    write_checksum_files=self.write_checksum_files,
+                )
+                cram_name = os.path.basename(cram_file)
+                cram_size = os.path.getsize(cram_file)
+                with self.lock:
+                    self.total_cram_size += cram_size
+                logging.info(
+                    f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
+                logging.info(
+                    f"{cram_name} size: {cram_size / (1024 ** 3):.2f} GiB")
+                if self.delete:
+                    logging.info(
+                        f"Conversion successful, deleting BAM file: {bam}. Saved "
+                        f"space: {(bam_size - cram_size) / (1024 ** 3):.2f} GiB."
+                    )
+                    os.unlink(bam)
+            # Catch all is intentional. This way the thread can never crash and
+            # cause hanging.
+            except Exception as error:
+                logging.error(f"Conversion unsuccessful: {bam}. {repr(error)}")
+                with self.lock:
+                    self.errors.append(error)
+            finally:
+                self.queue.task_done()
+
+
 def cram_archiver(
         input_path: str,
         reference_files: Sequence[str],
         threads: int = DEFAULT_THREADS,
+        processes: int = DEFAULT_PROCESSES,
         cram_version: str = DEFAULT_CRAM_VERSION,
         write_index: bool = DEFAULT_WRITE_INDEX,
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
@@ -238,57 +347,50 @@ def cram_archiver(
         ignore_files=ignore_files,
         ignore_extensions=ignore_extensions,
     )
+
+    cram_converter = CramConverter(
+        reference_files=reference_files,
+        threads=threads,
+        processes=processes,
+        cram_version=cram_version,
+        write_index=write_index,
+        write_checksum_files=write_checksum_files,
+        minimum_age_days=minimum_age_days,
+        delete=delete,
+        dry_run=dry_run,
+    )
     number_of_bam_files = 0
-    errors = []
-    total_bam_size = 0
-    total_cram_size = 0
-    for number_of_bam_files, bam in enumerate(bam_files, start=1):
-        bam_size = os.path.getsize(bam)
-        bam_name = os.path.basename(bam)
-        total_bam_size += bam_size
-        if dry_run:
-            print(bam)
-            continue
-        try:
-            cram_file = convert_to_cram_and_check(
-                input_file=bam,
-                reference_id_to_path=ref_dicts,
-                threads=threads,
-                cram_version=cram_version,
-                write_index=write_index,
-                write_checksum_files=write_checksum_files,
-            )
-            cram_name = os.path.basename(cram_file)
-            cram_size = os.path.getsize(cram_file)
-            total_cram_size += cram_size
-            logging.info(f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
-            logging.info(f"{cram_name} size: {cram_size / (1024 ** 3):.2f} GiB")
-            if delete:
-                logging.info(
-                    f"Conversion successful, deleting BAM file: {bam}. Saved "
-                    f"space: {(bam_size - cram_size) / (1024 ** 3):.2f} GiB."
-                )
-                os.unlink(bam)
-        except (FileNotFoundError, RuntimeError, ReferenceLookupError) as error:
-            logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
-            errors.append(error)
+    cram_converter.start()
+    try:
+        for number_of_bam_files, bam in enumerate(bam_files, start=1):
+            cram_converter.add(bam)
+            if dry_run:
+                print(bam)
+        cram_converter.wait()
+    finally:
+        cram_converter.stop()
+
     if number_of_bam_files == 0:
         logging.warning("No BAM files found. Exiting.")
-    else:
+        return
+
+    total_bam_size = cram_converter.total_bam_size
+    total_cram_size = cram_converter.total_bam_size
+
+    logging.info(
+        f"Found {number_of_bam_files} BAM files of "
+        f"total: {total_bam_size / (1024 ** 3):.2f} GiB.")
+    if not dry_run:
         logging.info(
-            f"Found {number_of_bam_files} BAM files of "
-            f"total: {total_bam_size / (1024 ** 3):.2f} GiB.")
-        if not dry_run:
+            f"Total generated CRAM size: "
+            f"{total_cram_size / (1024 ** 3):.2f} GiB.")
+        if delete:
             logging.info(
-                f"Total generated CRAM size: "
-                f"{total_cram_size / (1024 ** 3):.2f} GiB.")
-            if delete:
-                logging.info(
-                    f"Total saved size: "
-                    f"{(total_bam_size - total_cram_size) / (1024 ** 3):.2f} "
-                    f"GiB."
-                )
-    if errors:
+                f"Total saved size: "
+                f"{(total_bam_size - total_cram_size) / (1024 ** 3):.2f} "
+                f"GiB."
+            )
+    if cram_converter.errors:
         raise RuntimeError("Errors occurred during conversions.")
 
 
@@ -305,8 +407,16 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-t", "--threads", type=int, default=DEFAULT_THREADS,
-        help=f"The number of threads used for conversion and checksumming."
+        help=f"The number of threads used by samtools for conversion and "
+             f"checksumming. "
              f"Default: {DEFAULT_THREADS}."
+    )
+    parser.add_argument(
+        "-p", "--processes", type=int, default=DEFAULT_PROCESSES,
+        help=f"The number of parallel samtools processes that are used. "
+             f"Multiply this with number of threads to get the number of used "
+             f"CPU cores."
+             f"Default: {DEFAULT_PROCESSES}."
     )
     parser.add_argument(
         "-d", "--minimum-age-days", type=int,
@@ -394,6 +504,7 @@ def cram_archiver_main(*args):
         input_path=arg.path,
         reference_files=arg.reference,
         threads=arg.threads,
+        processes=arg.processes,
         cram_version=arg.cram_version,
         write_index=arg.write_index,
         write_checksum_files=arg.write_checksums,
