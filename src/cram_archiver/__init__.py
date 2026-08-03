@@ -514,6 +514,7 @@ def cram_archiver_main(*args):
     if arg.exclude_list is not None:
         for exclude_item in parse_exclude_file(arg.exclude_list):
             exclude_list.append(exclude_item)
+    logging.debug(f"Files to exclude: {exclude_list}")
 
     cram_archiver(
         input_path=arg.path,
