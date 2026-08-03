@@ -395,9 +395,18 @@ def cram_archiver(
 
 
 def parse_exclude_file(exclude_file: str) -> Iterator[str]:
+    exclude_file_parent = os.path.dirname(exclude_file)
     with open(exclude_file, "rt") as f:
         for line in f:
-            yield line.strip()
+            line = line.strip()
+            path, *comments = line.split("#")
+            path = path.strip()
+            if path == "":  # Ignore empty lines, lines with only comments
+                continue
+            if os.path.isabs(path):
+                yield path
+            else:
+                yield os.path.join(exclude_file_parent, path)
 
 
 def argument_parser() -> argparse.ArgumentParser:
