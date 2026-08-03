@@ -395,7 +395,7 @@ def cram_archiver(
 
 
 def parse_exclude_file(exclude_file: str) -> Iterator[str]:
-    exclude_file_parent = os.path.dirname(exclude_file)
+    exclude_file_parent = os.path.abspath(os.path.dirname(exclude_file))
     with open(exclude_file, "rt") as f:
         for line in f:
             line = line.strip()
