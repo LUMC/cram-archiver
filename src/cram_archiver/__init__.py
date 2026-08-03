@@ -394,6 +394,12 @@ def cram_archiver(
         raise RuntimeError("Errors occurred during conversions.")
 
 
+def parse_exclude_file(exclude_file: str) -> Iterator[str]:
+    with open(exclude_file, "rt") as f:
+        for line in f:
+            yield line.strip()
+
+
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -497,8 +503,8 @@ def cram_archiver_main(*args):
     else:
         exclude_list = []
     if arg.exclude_list is not None:
-        with open(arg.exclude_list, "rt") as f:
-            exclude_list.extend(f.read().splitlines(keepends=False))
+        for exclude_item in parse_exclude_file(arg.exclude_list):
+            exclude_list.append(exclude_item)
 
     cram_archiver(
         input_path=arg.path,
