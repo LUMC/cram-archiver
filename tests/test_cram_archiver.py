@@ -28,7 +28,6 @@ from cram_archiver import (
     cram_archiver,
     cram_archiver_main,
     find_bam_files,
-    handle_file_age,
     parse_exclude_file,
     strip_comments_from_checksum,
 )
@@ -99,25 +98,6 @@ def test_convert_to_cram_and_check(
     assert os.path.exists(tmp_cram_checksum) is write_checksum_files
     assert os.path.exists(tmp_bam_checksum) is write_checksum_files
     assert get_file_cram_version(tmp_cram) == cram_version
-
-
-@pytest.mark.parametrize(
-    ["file_mtime", "older_than_timestamp", "success"],
-    [
-        (10.0, 0.0, False),
-        (0.0, 10.0, True),
-    ]
-)
-def test_handle_file_age(file_mtime, older_than_timestamp, success, caplog):
-    caplog.set_level(logging.INFO)
-    result = list(handle_file_age("test", file_mtime, older_than_timestamp))
-    if success:
-        assert result == ["test"]
-        assert caplog.text == ""
-    else:
-        assert result == []
-        assert "test" in caplog.text
-        assert "Skipping" in caplog.text
 
 
 @pytest.mark.parametrize("debug", [True, False])

@@ -22,7 +22,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set
+from typing import Dict, Iterator, List, Optional, Sequence, Set, Union
 
 from ._version import __version__
 from .references import ReferenceID
@@ -131,48 +131,56 @@ def convert_to_cram_and_check(
     return output_file
 
 
-def handle_file_age(file, file_mtime: float, older_than_timestamp: float
-                    ) -> Iterator[str]:
-    if file_mtime < older_than_timestamp:
-        yield file
-    else:
-        logging.info(f"Skipping too new file: {file}.")
+class PathMethods:
+    """
+    Handler class for both regular paths and os.DirEntry objects.
 
+    os.DirEntry objects are optimized for quick resolving without accessing
+    the filesystem and needing expensive system calls. However, their methods
+    cannot be used on single paths.
+    """
+    @classmethod
+    def is_file(cls, obj: Union[str, os.DirEntry[str]],
+                follow_symlinks: bool) -> bool:
+        if isinstance(obj, os.DirEntry):
+            return obj.is_file(follow_symlinks=follow_symlinks)
+        is_link = os.path.islink(obj)
+        if is_link and not follow_symlinks:
+            return False
+        return os.path.isfile(obj)
 
-def _find_bam_files_dirscan(
-        input_dir: str,
-        older_than_timestamp: float,
-        ignore_files: Set[str],
-        ignore_extensions: Iterable[str],
-        follow_symlinks: bool,
-):
-    for entry in os.scandir(input_dir):
-        if entry.path in ignore_files:
-            logging.info(f"Ignoring {entry.path}")
-            continue
-        if any(entry.path.endswith(ext) for ext in ignore_extensions):
-            logging.info(f"Ignoring {entry.path}")
-            continue
-        logging.debug(f"Searching: {entry.path}")
-        if entry.is_file(follow_symlinks=follow_symlinks):
-            if entry.name.endswith(".bam"):
-                yield from handle_file_age(
-                    file=entry.path,
-                    file_mtime=entry.stat().st_mtime,
-                    older_than_timestamp=older_than_timestamp
-                )
-        elif entry.is_dir(follow_symlinks=follow_symlinks):
-            yield from _find_bam_files_dirscan(
-                input_dir=entry.path,
-                older_than_timestamp=older_than_timestamp,
-                ignore_files=ignore_files,
-                ignore_extensions=ignore_extensions,
-                follow_symlinks=follow_symlinks
-            )
+    @classmethod
+    def is_dir(cls, obj: Union[str, os.DirEntry[str]],
+               follow_symlinks: bool) -> bool:
+        if isinstance(obj, os.DirEntry):
+            return obj.is_dir(follow_symlinks=follow_symlinks)
+        is_link = os.path.islink(obj)
+        if is_link and not follow_symlinks:
+            return False
+        return os.path.isdir(obj)
+
+    @classmethod
+    def mtime(cls, obj: Union[str, os.DirEntry[str]]):
+        if isinstance(obj, os.DirEntry):
+            return obj.stat().st_mtime
+        return os.stat(obj).st_mtime
+
+    @classmethod
+    def endswith(cls, obj: Union[str, os.DirEntry[str]],
+                 end: str):
+        if isinstance(obj, os.DirEntry):
+            return obj.name.endswith(end)
+        return obj.endswith(end)
+
+    @classmethod
+    def to_str(cls, obj: Union[str, os.DirEntry[str]]):
+        if isinstance(obj, os.DirEntry):
+            return obj.path
+        return obj
 
 
 def find_bam_files(
-        input_path: str,
+        input_path: Union[str, os.DirEntry],
         older_than_timestamp: float = time.time(),
         ignore_files: Optional[Sequence[str]] = None,
         ignore_extensions: Optional[Sequence[str]] = None,
@@ -180,32 +188,38 @@ def find_bam_files(
 ) -> Iterator[str]:
     # Make input path and ignore files absolute. This also deals with trailing
     # slashes for directories and ../ entries.
-    input_path = os.path.abspath(input_path)
-    if ignore_files is not None:
-        ignore_set = {os.path.abspath(p) for p in ignore_files}
+    if not isinstance(input_path, os.DirEntry):
+        input_path = os.path.abspath(input_path)
+    if ignore_files is not None and not isinstance(ignore_files, set):
+        ignore_set: Set[str] = {os.path.abspath(p) for p in ignore_files}
     else:
         ignore_set = set()
     if ignore_extensions is None:
         ignore_extensions = tuple()
-    if input_path in ignore_set:
-        logging.info(f"Ignoring {input_path}")
+    str_path = PathMethods.to_str(input_path)
+    if str_path in ignore_set:
+        logging.info(f"Ignoring {str_path}")
         return
-    if any(input_path.endswith(ext) for ext in ignore_extensions):
-        logging.info(f"Ignoring {input_path}")
+    if any(str_path.endswith(ext) for ext in ignore_extensions):
+        logging.info(f"Ignoring {str_path}")
         return
-    if os.path.islink(input_path) and not follow_symlinks:
-        return
-    if os.path.isfile(input_path):
-        yield from handle_file_age(
-            input_path, os.path.getmtime(input_path), older_than_timestamp)
-    elif os.path.isdir(input_path):
-        yield from _find_bam_files_dirscan(
-            input_dir=input_path,
-            older_than_timestamp=older_than_timestamp,
-            ignore_files=ignore_set,
-            ignore_extensions=ignore_extensions,
-            follow_symlinks=follow_symlinks
-        )
+    logging.debug(f"Searching: {str_path}")
+    if PathMethods.is_file(input_path, follow_symlinks):
+        if str_path.endswith(".bam"):
+            mtime = PathMethods.mtime(input_path)
+            if mtime < older_than_timestamp:
+                yield str_path
+            else:
+                logging.info(f"Skipping too new file: {str_path}.")
+    elif PathMethods.is_dir(input_path, follow_symlinks):
+        for entry in os.scandir(str_path):
+            yield from find_bam_files(
+                input_path=entry,
+                older_than_timestamp=older_than_timestamp,
+                ignore_files=ignore_set,  # type: ignore
+                ignore_extensions=ignore_extensions,
+                follow_symlinks=follow_symlinks,
+            )
 
 
 class CramConverter:
