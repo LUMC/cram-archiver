@@ -141,7 +141,7 @@ def test_find_bam_files(tmp_path, caplog, debug):
     os.utime(bam1, (1000, 300))
     os.utime(bam2, (1000, 200))
     os.utime(bam3, (1000, 100))
-    result = list(find_bam_files(str(tmp_path), older_than_timestamp=201))
+    result = list(find_bam_files([str(tmp_path)], older_than_timestamp=201))
     assert set(result) == {str(bam2), str(bam3)}
     assert str(bam1) in caplog.text
     assert (str(bam2) in caplog.text) is debug
@@ -175,7 +175,7 @@ def test_find_bam_files_no_symlinks(tmp_path, caplog, debug):
     os.utime(bam1, (1000, 300))
     os.utime(bam2, (1000, 200))
     os.utime(bam3, (1000, 100))
-    result = list(find_bam_files(str(tmp_path), older_than_timestamp=201))
+    result = list(find_bam_files([str(tmp_path)], older_than_timestamp=201))
     assert set(result) == {str(bam2), str(bam3)}
     assert str(bam1) in caplog.text
     assert (str(bam2) in caplog.text) is debug
@@ -203,7 +203,7 @@ def test_find_bam_files_exclude(tmp_path: Path, caplog, debug):
     decoy1.touch()
     decoy2.touch()
     result = list(find_bam_files(
-        str(tmp_path),
+        [str(tmp_path)],
         # Make the timestamp very big to avoid testing issues.
         older_than_timestamp=math.inf,
         ignore_files=[str(bam1.absolute())]
@@ -236,7 +236,7 @@ def test_find_bam_files_exclude_ext(tmp_path: Path, caplog, debug):
     decoy1.touch()
     decoy2.touch()
     result = list(find_bam_files(
-        str(tmp_path),
+        [str(tmp_path)],
         # Make the timestamp very big to avoid testing issues.
         older_than_timestamp=math.inf,
         ignore_extensions=[".repeats.bam"]
@@ -331,7 +331,7 @@ def test_cram_archiver(
         cram_archiver_main(*args)
     else:
         cram_archiver(
-            input_path=str(tmp_path),
+            input_paths=[str(tmp_path)],
             reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
             cram_version=cram_version,
             write_index=write_index,
@@ -423,7 +423,7 @@ def test_cram_archiver_single_file(
         cram_archiver_main(*args)
     else:
         cram_archiver(
-            input_path=str(bam),
+            input_paths=[str(bam)],
             reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
             cram_version=cram_version,
             write_index=write_index,
@@ -461,7 +461,7 @@ def test_cram_archiver_dry_run(tmp_path, capsys, delete,
     os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
     os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
     cram_archiver(
-        input_path=str(tmp_path),
+        input_paths=[str(tmp_path)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         minimum_age_days=1,
         dry_run=True,
@@ -486,7 +486,7 @@ def test_cram_archiver_dry_run_exclude_files(tmp_path, capsys):
     bam2.touch()
     bam3.touch()
     cram_archiver(
-        input_path=str(tmp_path),
+        input_paths=[str(tmp_path)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         dry_run=True,
         ignore_files=[str(bam1), str(bam3)],
@@ -508,7 +508,7 @@ def test_cram_archiver_dry_run_root_dir_excluded(tmp_path, capsys):
     bam2.touch()
     bam3.touch()
     cram_archiver(
-        input_path=str(tmp_path),
+        input_paths=[str(tmp_path)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         dry_run=True,
         ignore_files=[str(tmp_path)],
@@ -525,7 +525,7 @@ def test_cram_archiver_dry_run_root_file_excluded(tmp_path, capsys):
     bam1 = tmp_path / "bam1.bam"
     bam1.touch()
     cram_archiver(
-        input_path=str(bam1),
+        input_paths=[str(bam1)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         dry_run=True,
         ignore_files=[str(bam1)],
@@ -595,7 +595,7 @@ def test_cram_archiver_no_reference_fai(tmp_path):
 
 
 def test_cram_archiver_no_bam_files(tmp_path, caplog):
-    cram_archiver(str(tmp_path), [str(TEST_DATA / "NC012920.1.fasta")])
+    cram_archiver([str(tmp_path)], [str(TEST_DATA / "NC012920.1.fasta")])
     assert "No BAM files found." in caplog.text
 
 
@@ -645,7 +645,7 @@ def test_cram_archiver_fails_gracefully(
     os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
     with pytest.raises(RuntimeError) as error:
         cram_archiver(
-            input_path=str(tmp_path),
+            input_paths=[str(tmp_path)],
             reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
             cram_version=cram_version,
             write_index=True,

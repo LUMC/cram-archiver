@@ -160,46 +160,51 @@ def _find_files_dirscan(
 
 
 def find_bam_files(
-        input_path: str,
+        input_paths: List[str],
         older_than_timestamp: float = time.time(),
         ignore_files: Optional[Sequence[str]] = None,
         ignore_extensions: Optional[Sequence[str]] = None,
         follow_symlinks=False,
 ) -> Iterator[str]:
-    # Make input path and ignore files absolute. This also deals with trailing
-    # slashes for directories and ../ entries.
-    input_path = os.path.abspath(input_path)
-    if ignore_files is not None:
-        ignore_set = {os.path.abspath(p) for p in ignore_files}
-    else:
-        ignore_set = set()
-    if ignore_extensions is None:
-        ignore_extensions = tuple()
-    if input_path in ignore_set:
-        logging.info(f"Ignoring {input_path}")
-        return
-    if os.path.islink(input_path) and not follow_symlinks:
-        return
-    if os.path.isdir(input_path):
-        files: Iterable[str] = _find_files_dirscan(
-            input_dir=input_path,
-            ignore_files=ignore_set,
-            follow_symlinks=follow_symlinks
-        )
-    elif os.path.isfile(input_path):
-        files = [input_path]
-    else:
-        return
-    for file in files:
-        if not file.endswith(".bam"):
-            continue
-        if any(file.endswith(ext) for ext in ignore_extensions):
-            logging.info(f"Ignoring {file}")
-            continue
-        if os.path.getmtime(file) < older_than_timestamp:
-            yield file
+    if not isinstance(input_paths, list):
+        # Otherwise a string path might be iterated over: "/whatever/somefile"
+        # starts with "/" so root will be indexed. Not desirable!
+        raise TypeError(f"Input paths should be a list, got {type(input_paths)}")
+    for input_path in input_paths:
+        # Make input path and ignore files absolute. This also deals with trailing
+        # slashes for directories and ../ entries.
+        input_path = os.path.abspath(input_path)
+        if ignore_files is not None:
+            ignore_set = {os.path.abspath(p) for p in ignore_files}
         else:
-            logging.info(f"Skipping too new file: {file}.")
+            ignore_set = set()
+        if ignore_extensions is None:
+            ignore_extensions = tuple()
+        if input_path in ignore_set:
+            logging.info(f"Ignoring {input_path}")
+            return
+        if os.path.islink(input_path) and not follow_symlinks:
+            return
+        if os.path.isdir(input_path):
+            files: Iterable[str] = _find_files_dirscan(
+                input_dir=input_path,
+                ignore_files=ignore_set,
+                follow_symlinks=follow_symlinks
+            )
+        elif os.path.isfile(input_path):
+            files = [input_path]
+        else:
+            return
+        for file in files:
+            if not file.endswith(".bam"):
+                continue
+            if any(file.endswith(ext) for ext in ignore_extensions):
+                logging.info(f"Ignoring {file}")
+                continue
+            if os.path.getmtime(file) < older_than_timestamp:
+                yield file
+            else:
+                logging.info(f"Skipping too new file: {file}.")
 
 
 class CramConverter:
@@ -307,7 +312,7 @@ class CramConverter:
 
 
 def cram_archiver(
-        input_path: str,
+        input_paths: List[str],
         reference_files: Sequence[str],
         threads: int = DEFAULT_THREADS,
         processes: int = DEFAULT_PROCESSES,
@@ -336,7 +341,7 @@ def cram_archiver(
         ref_dicts[ref_id] = reference
 
     bam_files = find_bam_files(
-        input_path=input_path,
+        input_paths=input_paths,
         older_than_timestamp=older_than_timestamp,
         ignore_files=ignore_files,
         ignore_extensions=ignore_extensions,
@@ -406,8 +411,9 @@ def parse_exclude_file(exclude_file: str) -> Iterator[str]:
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "path", metavar="PATH",
-        help="Path to BAM file or directory to be recursively searched."
+        "path", metavar="PATH", nargs="+",
+        help="Path to BAM file or directory to be recursively searched. "
+             "Multiple paths can be given."
     )
     parser.add_argument(
         "-r", "--reference", action="append", required=True,
@@ -513,7 +519,7 @@ def cram_archiver_main(*args):
     logging.debug(f"Files to exclude: {exclude_list}")
 
     cram_archiver(
-        input_path=arg.path,
+        input_paths=arg.path,
         reference_files=arg.reference,
         threads=arg.threads,
         processes=arg.processes,
