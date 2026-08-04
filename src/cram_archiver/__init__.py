@@ -430,7 +430,7 @@ def argument_parser() -> argparse.ArgumentParser:
         "-p", "--processes", type=int, default=DEFAULT_PROCESSES,
         help=f"The number of parallel samtools processes that are used. "
              f"Multiply this with number of threads to get the number of used "
-             f"CPU cores."
+             f"CPU cores. "
              f"Default: {DEFAULT_PROCESSES}."
     )
     parser.add_argument(
@@ -458,7 +458,9 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--exclude-list", metavar="PATH",
         help="Supply a newline-separated file with files and directories to "
-             "exclude."
+             "exclude. Comments can be included with '#'. Empty lines are "
+             "ignored. Relative paths are resolved relative to the exclude "
+             "list file itself."
     )
     parser.add_argument(
         "--exclude-extension", metavar="EXTENSION",
