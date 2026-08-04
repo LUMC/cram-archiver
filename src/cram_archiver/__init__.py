@@ -139,34 +139,22 @@ def handle_file_age(file, file_mtime: float, older_than_timestamp: float
         logging.info(f"Skipping too new file: {file}.")
 
 
-def _find_bam_files_dirscan(
+def _find_files_dirscan(
         input_dir: str,
-        older_than_timestamp: float,
         ignore_files: Set[str],
-        ignore_extensions: Iterable[str],
         follow_symlinks: bool,
-):
+) -> Iterator[str]:
     for entry in os.scandir(input_dir):
         if entry.path in ignore_files:
             logging.info(f"Ignoring {entry.path}")
             continue
-        if any(entry.path.endswith(ext) for ext in ignore_extensions):
-            logging.info(f"Ignoring {entry.path}")
-            continue
         logging.debug(f"Searching: {entry.path}")
         if entry.is_file(follow_symlinks=follow_symlinks):
-            if entry.name.endswith(".bam"):
-                yield from handle_file_age(
-                    file=entry.path,
-                    file_mtime=entry.stat().st_mtime,
-                    older_than_timestamp=older_than_timestamp
-                )
+            yield entry.path
         elif entry.is_dir(follow_symlinks=follow_symlinks):
-            yield from _find_bam_files_dirscan(
+            yield from _find_files_dirscan(
                 input_dir=entry.path,
-                older_than_timestamp=older_than_timestamp,
                 ignore_files=ignore_files,
-                ignore_extensions=ignore_extensions,
                 follow_symlinks=follow_symlinks
             )
 
@@ -190,22 +178,28 @@ def find_bam_files(
     if input_path in ignore_set:
         logging.info(f"Ignoring {input_path}")
         return
-    if any(input_path.endswith(ext) for ext in ignore_extensions):
-        logging.info(f"Ignoring {input_path}")
-        return
     if os.path.islink(input_path) and not follow_symlinks:
         return
-    if os.path.isfile(input_path):
-        yield from handle_file_age(
-            input_path, os.path.getmtime(input_path), older_than_timestamp)
-    elif os.path.isdir(input_path):
-        yield from _find_bam_files_dirscan(
+    if os.path.isdir(input_path):
+        files: Iterable[str] = _find_files_dirscan(
             input_dir=input_path,
-            older_than_timestamp=older_than_timestamp,
             ignore_files=ignore_set,
-            ignore_extensions=ignore_extensions,
             follow_symlinks=follow_symlinks
         )
+    elif os.path.isfile(input_path):
+        files = [input_path]
+    else:
+        return
+    for file in files:
+        if not file.endswith(".bam"):
+            continue
+        if any(file.endswith(ext) for ext in ignore_extensions):
+            logging.info(f"Ignoring {file}")
+            continue
+        if os.path.getmtime(file) < older_than_timestamp:
+            yield file
+        else:
+            logging.info(f"Skipping too new file: {file}.")
 
 
 class CramConverter:
