@@ -9,6 +9,11 @@ Changelog
 
 develop
 ------------------
++ Several improvements to the ``--exclude-list`` file:
+    + Empty lines are now ignored.
+    + Comments (starting with ``#``) are ignored.
+    + Relative paths in the file are now resolved relative to the directory
+      of the file.
 + Add a ``processes`` flag to run multiple samtools processes in parallel.
 + Add a ``--exclude-extension`` option to exclude extensions. Useful for
   example for DRAGEN ``.repeats.bam`` files, which are very small.

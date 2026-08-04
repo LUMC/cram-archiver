@@ -29,6 +29,7 @@ from cram_archiver import (
     cram_archiver_main,
     find_bam_files,
     handle_file_age,
+    parse_exclude_file,
     strip_comments_from_checksum,
 )
 from cram_archiver.references import ReferenceID
@@ -681,3 +682,25 @@ def test_cram_archiver_fails_gracefully(
     assert ("Total saved size" in caplog.text)
     assert "Found 4 BAM files" in caplog.text
     assert "Total generated CRAM size" in caplog.text
+
+
+def test_parse_exclude_file(tmp_path):
+    file_to_ignore_absolute = "/a/b/c"
+    file_to_ignore_relative = "b/c"
+    comment = "# Comment dit on?"
+    empty_line = ""
+    file_to_ignore_relative_with_comment = "b/d  # Ou est la gare?"
+    with open(tmp_path / "exclude.txt", "wt") as f:
+        f.write(f"{file_to_ignore_absolute}\n"
+                f"{file_to_ignore_relative}\n"
+                f"{comment}\n"
+                f"{empty_line}\n"
+                f"{file_to_ignore_relative_with_comment}\n"
+                f"{empty_line}\n"
+                )
+    exclude_files = set(parse_exclude_file(str(tmp_path / "exclude.txt")))
+    assert exclude_files == {
+        file_to_ignore_absolute,
+        os.path.join(tmp_path, file_to_ignore_relative),
+        os.path.join(tmp_path, file_to_ignore_relative_with_comment[:3])
+    }

@@ -394,6 +394,21 @@ def cram_archiver(
         raise RuntimeError("Errors occurred during conversions.")
 
 
+def parse_exclude_file(exclude_file: str) -> Iterator[str]:
+    exclude_file_parent = os.path.abspath(os.path.dirname(exclude_file))
+    with open(exclude_file, "rt") as f:
+        for line in f:
+            line = line.strip()
+            path, *comments = line.split("#")
+            path = path.strip()
+            if path == "":  # Ignore empty lines, lines with only comments
+                continue
+            if os.path.isabs(path):
+                yield path
+            else:
+                yield os.path.join(exclude_file_parent, path)
+
+
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -415,7 +430,7 @@ def argument_parser() -> argparse.ArgumentParser:
         "-p", "--processes", type=int, default=DEFAULT_PROCESSES,
         help=f"The number of parallel samtools processes that are used. "
              f"Multiply this with number of threads to get the number of used "
-             f"CPU cores."
+             f"CPU cores. "
              f"Default: {DEFAULT_PROCESSES}."
     )
     parser.add_argument(
@@ -443,7 +458,9 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--exclude-list", metavar="PATH",
         help="Supply a newline-separated file with files and directories to "
-             "exclude."
+             "exclude. Comments can be included with '#'. Empty lines are "
+             "ignored. Relative paths are resolved relative to the exclude "
+             "list file itself."
     )
     parser.add_argument(
         "--exclude-extension", metavar="EXTENSION",
@@ -497,8 +514,9 @@ def cram_archiver_main(*args):
     else:
         exclude_list = []
     if arg.exclude_list is not None:
-        with open(arg.exclude_list, "rt") as f:
-            exclude_list.extend(f.read().splitlines(keepends=False))
+        for exclude_item in parse_exclude_file(arg.exclude_list):
+            exclude_list.append(exclude_item)
+    logging.debug(f"Files to exclude: {exclude_list}")
 
     cram_archiver(
         input_path=arg.path,

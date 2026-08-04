@@ -76,7 +76,7 @@ Converting a single BAM file::
 
 This will create ``my.cram``, ``my.cram.crai``, ``my.cram.checksum`` and
 ``my.bam.checksum``. Checksum file creation can be turned of with
-``--dont-write-checksums``. The checkums will still be checked, just not
+``--dont-write-checksums``. The checksums will still be checked, just not
 written to disk.
 
 Archiving a directory with BAMs, but only BAMs that have a lost modified time
@@ -115,7 +115,8 @@ Usage
                             conversion and checksumming. Default: 1.
       -p, --processes PROCESSES
                             The number of parallel samtools processes that
-                            are used. Default: 1.
+                            are used. Multiply this with number of threads
+                            to get the number of used CPU cores. Default: 1.
       -d, --minimum-age-days MINIMUM_AGE_DAYS
                             The minimum last modification of the BAM file in
                             days prior. This assumes the system clock
@@ -129,7 +130,10 @@ Usage
       --exclude EXCLUDE     Exclude file or directory from conversion. Can
                             be supplied multiple times.
       --exclude-list PATH   Supply a newline-separated file with files and
-                            directories to exclude.
+                            directories to exclude. Comments can be included
+                            with '#'. Empty lines are ignored. Relative
+                            paths are resolved relative to the exclude list
+                            file itself.
       --exclude-extension EXTENSION
                             Exclude files with this extension from
                             conversion. For example '.repeats.bam' for
