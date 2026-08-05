@@ -280,6 +280,13 @@ def test_find_bam_files_multiple_paths(tmp_path: Path, caplog):
     assert f"Skipping duplicate path: {str(bam3)}" in caplog.text
 
 
+def test_find_bam_files_crash_on_string(tmp_path):
+    bam1 = tmp_path / "bam1.bam"
+    bam1.touch()
+    with pytest.raises(TypeError):
+        list(find_bam_files(str(tmp_path)))  # type: ignore
+
+
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete",
      "use_cli", "ignore_extensions", "processes"],
