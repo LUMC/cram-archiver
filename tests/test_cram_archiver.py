@@ -287,6 +287,12 @@ def test_find_bam_files_crash_on_string(tmp_path):
         list(find_bam_files(str(tmp_path)))  # type: ignore
 
 
+def test_find_bam_files_skip_non_file(tmp_path):
+    fifo_bam = tmp_path / "fifo.bam"
+    os.mkfifo(fifo_bam)
+    assert [] == list(find_bam_files([str(fifo_bam)]))
+
+
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete",
      "use_cli", "ignore_extensions", "processes"],
