@@ -170,21 +170,23 @@ def find_bam_files(
         # Otherwise a string path might be iterated over: "/whatever/somefile"
         # starts with "/" so root will be indexed. Not desirable!
         raise TypeError(f"Input paths should be a list, got {type(input_paths)}")
+    # Make the ignore files absolute. This also deals with trailing
+    # slashes for directories and ../ entries.
+    if ignore_files is not None:
+        ignore_set = {os.path.abspath(p) for p in ignore_files}
+    else:
+        ignore_set = set()
+    if ignore_extensions is None:
+        ignore_extensions = tuple()
+    already_found = set()
+
     for input_path in input_paths:
-        # Make input path and ignore files absolute. This also deals with trailing
-        # slashes for directories and ../ entries.
         input_path = os.path.abspath(input_path)
-        if ignore_files is not None:
-            ignore_set = {os.path.abspath(p) for p in ignore_files}
-        else:
-            ignore_set = set()
-        if ignore_extensions is None:
-            ignore_extensions = tuple()
         if input_path in ignore_set:
             logging.info(f"Ignoring {input_path}")
-            return
+            continue
         if os.path.islink(input_path) and not follow_symlinks:
-            return
+            continue
         if os.path.isdir(input_path):
             files: Iterable[str] = _find_files_dirscan(
                 input_dir=input_path,
@@ -194,13 +196,19 @@ def find_bam_files(
         elif os.path.isfile(input_path):
             files = [input_path]
         else:
-            return
+            continue
         for file in files:
             if not file.endswith(".bam"):
                 continue
             if any(file.endswith(ext) for ext in ignore_extensions):
                 logging.info(f"Ignoring {file}")
                 continue
+            # Do not convert the same BAM file twice if the user has given
+            # multiple paths that resolve to the same BAM file.
+            if file in already_found:
+                logging.warning(f"Skipping duplicate path: {file}.")
+                continue
+            already_found.add(file)
             if os.path.getmtime(file) < older_than_timestamp:
                 yield file
             else:

@@ -250,6 +250,34 @@ def test_find_bam_files_exclude_ext(tmp_path: Path, caplog, debug):
     assert (str(decoy2) in caplog.text) is debug
 
 
+def test_find_bam_files_multiple_paths(tmp_path: Path, caplog):
+    caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    decoy1.touch()
+    decoy2.touch()
+    result = list(find_bam_files(
+        [str(bam1), str(tmp_path), str(bam3)],
+        # Make the timestamp very big to avoid testing issues.
+        older_than_timestamp=math.inf,
+        ignore_files=[str(bam1)]
+    ))
+    result.sort()
+    assert result == [str(bam2), str(bam3)]
+    assert str(bam1) in caplog.text
+    assert "Ignoring" in caplog.text
+    assert "WARNING" in caplog.text
+    assert f"Skipping duplicate path: {str(bam3)}" in caplog.text
+
+
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete",
      "use_cli", "ignore_extensions", "processes"],
