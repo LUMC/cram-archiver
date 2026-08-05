@@ -9,6 +9,8 @@ Changelog
 
 develop
 ------------------
++ Multiple paths can be given to ``cram-archiver``. BAM files will only be
+  converted once; duplicate paths will be skipped.
 + Several improvements to the ``--exclude-list`` file:
     + Empty lines are now ignored.
     + Comments (starting with ``#``) are ignored.

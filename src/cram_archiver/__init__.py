@@ -139,73 +139,80 @@ def handle_file_age(file, file_mtime: float, older_than_timestamp: float
         logging.info(f"Skipping too new file: {file}.")
 
 
-def _find_bam_files_dirscan(
+def _find_files_dirscan(
         input_dir: str,
-        older_than_timestamp: float,
         ignore_files: Set[str],
-        ignore_extensions: Iterable[str],
         follow_symlinks: bool,
-):
+) -> Iterator[str]:
     for entry in os.scandir(input_dir):
         if entry.path in ignore_files:
             logging.info(f"Ignoring {entry.path}")
             continue
-        if any(entry.path.endswith(ext) for ext in ignore_extensions):
-            logging.info(f"Ignoring {entry.path}")
-            continue
         logging.debug(f"Searching: {entry.path}")
         if entry.is_file(follow_symlinks=follow_symlinks):
-            if entry.name.endswith(".bam"):
-                yield from handle_file_age(
-                    file=entry.path,
-                    file_mtime=entry.stat().st_mtime,
-                    older_than_timestamp=older_than_timestamp
-                )
+            yield entry.path
         elif entry.is_dir(follow_symlinks=follow_symlinks):
-            yield from _find_bam_files_dirscan(
+            yield from _find_files_dirscan(
                 input_dir=entry.path,
-                older_than_timestamp=older_than_timestamp,
                 ignore_files=ignore_files,
-                ignore_extensions=ignore_extensions,
                 follow_symlinks=follow_symlinks
             )
 
 
 def find_bam_files(
-        input_path: str,
+        input_paths: List[str],
         older_than_timestamp: float = time.time(),
         ignore_files: Optional[Sequence[str]] = None,
         ignore_extensions: Optional[Sequence[str]] = None,
         follow_symlinks=False,
 ) -> Iterator[str]:
-    # Make input path and ignore files absolute. This also deals with trailing
+    if not isinstance(input_paths, list):
+        # Otherwise a string path might be iterated over: "/whatever/somefile"
+        # starts with "/" so root will be indexed. Not desirable!
+        raise TypeError(f"Input paths should be a list, got {type(input_paths)}")
+    # Make the ignore files absolute. This also deals with trailing
     # slashes for directories and ../ entries.
-    input_path = os.path.abspath(input_path)
     if ignore_files is not None:
         ignore_set = {os.path.abspath(p) for p in ignore_files}
     else:
         ignore_set = set()
     if ignore_extensions is None:
         ignore_extensions = tuple()
-    if input_path in ignore_set:
-        logging.info(f"Ignoring {input_path}")
-        return
-    if any(input_path.endswith(ext) for ext in ignore_extensions):
-        logging.info(f"Ignoring {input_path}")
-        return
-    if os.path.islink(input_path) and not follow_symlinks:
-        return
-    if os.path.isfile(input_path):
-        yield from handle_file_age(
-            input_path, os.path.getmtime(input_path), older_than_timestamp)
-    elif os.path.isdir(input_path):
-        yield from _find_bam_files_dirscan(
-            input_dir=input_path,
-            older_than_timestamp=older_than_timestamp,
-            ignore_files=ignore_set,
-            ignore_extensions=ignore_extensions,
-            follow_symlinks=follow_symlinks
-        )
+    already_found = set()
+
+    for input_path in input_paths:
+        input_path = os.path.abspath(input_path)
+        if input_path in ignore_set:
+            logging.info(f"Ignoring {input_path}")
+            continue
+        if os.path.islink(input_path) and not follow_symlinks:
+            continue
+        if os.path.isdir(input_path):
+            files: Iterable[str] = _find_files_dirscan(
+                input_dir=input_path,
+                ignore_files=ignore_set,
+                follow_symlinks=follow_symlinks
+            )
+        elif os.path.isfile(input_path):
+            files = [input_path]
+        else:
+            continue
+        for file in files:
+            if not file.endswith(".bam"):
+                continue
+            if any(file.endswith(ext) for ext in ignore_extensions):
+                logging.info(f"Ignoring {file}")
+                continue
+            # Do not convert the same BAM file twice if the user has given
+            # multiple paths that resolve to the same BAM file.
+            if file in already_found:
+                logging.warning(f"Skipping duplicate path: {file}.")
+                continue
+            already_found.add(file)
+            if os.path.getmtime(file) < older_than_timestamp:
+                yield file
+            else:
+                logging.info(f"Skipping too new file: {file}.")
 
 
 class CramConverter:
@@ -313,7 +320,7 @@ class CramConverter:
 
 
 def cram_archiver(
-        input_path: str,
+        input_paths: List[str],
         reference_files: Sequence[str],
         threads: int = DEFAULT_THREADS,
         processes: int = DEFAULT_PROCESSES,
@@ -342,7 +349,7 @@ def cram_archiver(
         ref_dicts[ref_id] = reference
 
     bam_files = find_bam_files(
-        input_path=input_path,
+        input_paths=input_paths,
         older_than_timestamp=older_than_timestamp,
         ignore_files=ignore_files,
         ignore_extensions=ignore_extensions,
@@ -412,8 +419,9 @@ def parse_exclude_file(exclude_file: str) -> Iterator[str]:
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "path", metavar="PATH",
-        help="Path to BAM file or directory to be recursively searched."
+        "path", metavar="PATH", nargs="+",
+        help="Path to BAM file or directory to be recursively searched. "
+             "Multiple paths can be given."
     )
     parser.add_argument(
         "-r", "--reference", action="append", required=True,
@@ -519,7 +527,7 @@ def cram_archiver_main(*args):
     logging.debug(f"Files to exclude: {exclude_list}")
 
     cram_archiver(
-        input_path=arg.path,
+        input_paths=arg.path,
         reference_files=arg.reference,
         threads=arg.threads,
         processes=arg.processes,

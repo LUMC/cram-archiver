@@ -98,11 +98,11 @@ Usage
                          [--exclude-extension EXTENSION]
                          [--dont-write-checksums] [--dont-write-index]
                          [--dry-run] [-v] [-q] [--version]
-                         PATH
+                         PATH [PATH ...]
 
     positional arguments:
       PATH                  Path to BAM file or directory to be recursively
-                            searched.
+                            searched. Multiple paths can be given.
 
     options:
       -h, --help            show this help message and exit
