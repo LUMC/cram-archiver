@@ -175,7 +175,9 @@ def test_find_bam_files_no_symlinks(tmp_path, caplog, debug):
     os.utime(bam1, (1000, 300))
     os.utime(bam2, (1000, 200))
     os.utime(bam3, (1000, 100))
-    result = list(find_bam_files([str(tmp_path)], older_than_timestamp=201))
+    result = list(find_bam_files(
+        [str(bam1_link), str(tmp_path)],
+        older_than_timestamp=201))
     assert set(result) == {str(bam2), str(bam3)}
     assert str(bam1) in caplog.text
     assert (str(bam2) in caplog.text) is debug
