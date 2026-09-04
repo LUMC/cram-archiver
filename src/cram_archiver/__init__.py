@@ -382,7 +382,7 @@ def cram_archiver(
         return
 
     total_bam_size = cram_converter.total_bam_size
-    total_cram_size = cram_converter.total_bam_size
+    total_cram_size = cram_converter.total_cram_size
 
     logging.info(
         f"Found {number_of_bam_files} BAM files of "
