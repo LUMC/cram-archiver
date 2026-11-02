@@ -52,9 +52,9 @@ def test_checksum():
     sum = checksum(bam, str(TEST_DATA / "NC012920.1.fasta"))
     checksum_expected = (
         "all        all           178  06d90a04  526c1585  3e8f585f  "
-        "41c54f43  268b6cbb  1ff11ae8  35f542f6  56a9ac23\n"
+        "41c54f43  268b6cbb  1ff11ae8  3ea7f7fe  7595cdcf\n"
         "GM24385_fastq-lib1-fastq all           178  06d90a04  526c1585  "
-        "3e8f585f  41c54f43  268b6cbb  1ff11ae8  35f542f6  56a9ac23\n"
+        "3e8f585f  41c54f43  268b6cbb  1ff11ae8  3ea7f7fe  7595cdcf\n"
     )
     assert checksum_expected in sum
     assert checksum_expected == strip_comments_from_checksum(sum)
