@@ -41,6 +41,20 @@ class ReferenceLookupError(KeyError):
     pass
 
 
+def version_information():
+    cram_archiver_version = f"This is cram-archiver {__version__}."
+    samtools_version_text = subprocess.check_output(["samtools", "--version"],
+                                                    encoding="utf-8")
+    # We do not want the compile information
+    samtools_version_start = samtools_version_text.splitlines()[:2]
+    if (samtools_version_start[0].startswith("samtools") and
+            samtools_version_start[1].startswith("Using")):
+        samtools_version = " ".join(samtools_version_start).lower()
+    else:
+        return cram_archiver_version
+    return cram_archiver_version + f" Which uses {samtools_version}."
+
+
 def convert_to_cram(
         input_file: str,
         output_file: str,
@@ -498,7 +512,7 @@ def argument_parser() -> argparse.ArgumentParser:
         help="Display less logging information."
     )
     parser.add_argument(
-        "--version", action="version", version=__version__
+        "--version", action="version", version=version_information()
     )
     return parser
 
