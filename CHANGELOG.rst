@@ -9,6 +9,13 @@ Changelog
 
 develop
 ------------------
++ ``cram-archiver --version`` now starts with "This is cram-archiver" then
+  states its version and afterwards states the versions of samtools and htslib
+  used.
++ Update the internal testing checksums to samtools checksum version 1.25 as
+  there have been some mistakes in previous versions of samtools. See
+  `this issue <https://github.com/samtools/samtools/issues/2354>`_ for more
+  information.
 + Multiple paths can be given to ``cram-archiver``. BAM files will only be
   converted once; duplicate paths will be skipped.
 + Several improvements to the ``--exclude-list`` file:
