@@ -20,6 +20,13 @@ Features:
 + Performs CRAM conversion using ``samtools view``.
 + Performs ``samtools checksum --all`` on the BAM and CRAM file and checks
   if the checksum matches.
++ Parallel. Can use the ``--threads`` flag to set the number of threads used by
+  ``samtools`` and start multiple ``samtools`` processes in parallel by using
+  the ``--processes`` flag. In general, on storage systems that prefer
+  sequential input and output (hard disks for instance) using ``--threads`` is
+  preferred as only one process is reading and writing. On storage systems that
+  can deal with massively parallel read and write tasks using more processes
+  does scale much better in terms of CPU core utilization.
 + On by default: writes checksum files for manual verification.
 + On by default: writes CRAM indexes.
 + Optional: deletes BAM file after conversion.
@@ -60,6 +67,14 @@ To assure the CRAM file is "functionally the same" as the BAM file, the
 about comparing BAM and CRAM checkout `the discussion here
 <https://github.com/samtools/samtools/issues/2212>`_.
 
+Versions of ``samtools checksum`` before 1.24 incorrectly calculated the mate
+checksum. In 1.24 this was fixed, but without incrementing the checksum version
+number, which was still printed as 1.0. This was fixed in 1.25 where the
+checksum number was increased to 2.0. This is something to be aware of when
+evaluating checksums that have been made by cram-archiver in the past. For
+more information check the `corresponding samtools issue
+<https://github.com/samtools/samtools/issues/2354>`_.
+
 Quickstart
 ==========
 
@@ -69,7 +84,7 @@ Converting a single BAM file::
 
 This will create ``my.cram``, ``my.cram.crai``, ``my.cram.checksum`` and
 ``my.bam.checksum``. Checksum file creation can be turned of with
-``--dont-write-checksums``. The checkums will still be checked, just not
+``--dont-write-checksums``. The checksums will still be checked, just not
 written to disk.
 
 Archiving a directory with BAMs, but only BAMs that have a lost modified time
@@ -84,38 +99,54 @@ successful and the checksums match.
 Usage
 =====
 
-    usage: cram-archiver [-h] -r REFERENCE [-t THREADS] [-d MINIMUM_AGE_DAYS]
-                         [--delete] [--cram-version CRAM_VERSION]
-                         [--exclude EXCLUDE] [--exclude-list PATH]
-                         [--dont-write-checksums] [--dont-write-index] [--dry-run]
-                         [-v] [-q] [--version]
-                         PATH
+    usage: cram-archiver [-h] -r REFERENCE [-t THREADS] [-p PROCESSES]
+                         [-d MINIMUM_AGE_DAYS] [--delete]
+                         [--cram-version CRAM_VERSION] [--exclude EXCLUDE]
+                         [--exclude-list PATH]
+                         [--exclude-extension EXTENSION]
+                         [--dont-write-checksums] [--dont-write-index]
+                         [--dry-run] [-v] [-q] [--version]
+                         PATH [PATH ...]
 
     positional arguments:
       PATH                  Path to BAM file or directory to be recursively
-                            searched.
+                            searched. Multiple paths can be given.
 
     options:
       -h, --help            show this help message and exit
-      -r REFERENCE, --reference REFERENCE
-                            Reference to be used for CRAM conversion. Can be used
-                            multiple times. Reference will be checked with the BAM
-                            file.
-      -t THREADS, --threads THREADS
-                            The number of threads used for conversion and
-                            checksumming.Default: 1.
-      -d MINIMUM_AGE_DAYS, --minimum-age-days MINIMUM_AGE_DAYS
-                            The minimum last modification of the BAM file in days
-                            prior. This assumes the system clock timezone matches
-                            that of the file while also assuming that every day
-                            has 24x60x60 seconds. Default 0.
+      -r, --reference REFERENCE
+                            Reference to be used for CRAM conversion. Can be
+                            used multiple times. Reference will be checked
+                            with the BAM file.
+      -t, --threads THREADS
+                            The number of threads used by samtools for
+                            conversion and checksumming. Default: 1.
+      -p, --processes PROCESSES
+                            The number of parallel samtools processes that
+                            are used. Multiply this with number of threads
+                            to get the number of used CPU cores. Default: 1.
+      -d, --minimum-age-days MINIMUM_AGE_DAYS
+                            The minimum last modification of the BAM file in
+                            days prior. This assumes the system clock
+                            timezone matches that of the file while also
+                            assuming that every day has 24x60x60 seconds.
+                            Default 0.
       --delete              Delete BAM files after successful conversion.
       --cram-version CRAM_VERSION
-                            CRAM version to use for CRAM conversion. Default: 3.0.
-      --exclude EXCLUDE     Exclude file or directory from conversion. Can be
-                            supplied multiple times.
+                            CRAM version to use for CRAM conversion.
+                            Default: 3.0.
+      --exclude EXCLUDE     Exclude file or directory from conversion. Can
+                            be supplied multiple times.
       --exclude-list PATH   Supply a newline-separated file with files and
-                            directories to exclude.
+                            directories to exclude. Comments can be included
+                            with '#'. Empty lines are ignored. Relative
+                            paths are resolved relative to the exclude list
+                            file itself.
+      --exclude-extension EXTENSION
+                            Exclude files with this extension from
+                            conversion. For example '.repeats.bam' for
+                            DRAGEN-generated repeats BAM files. Can be
+                            supplied multiple times.
       --dont-write-checksums
                             Do not store samtools checksum output on disk.
       --dont-write-index    Do not write index files for CRAM files.

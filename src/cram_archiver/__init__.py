@@ -17,10 +17,12 @@
 import argparse
 import logging
 import os
+import queue
 import subprocess
+import threading
 import time
 from pathlib import Path
-from typing import Dict, Iterator, Optional, Sequence, Set
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set
 
 from ._version import __version__
 from .references import ReferenceID
@@ -28,10 +30,29 @@ from .references import ReferenceID
 # 3.1 Not supported by some tools currently (2025)
 DEFAULT_CRAM_VERSION = "3.0"
 DEFAULT_THREADS = 1
+DEFAULT_PROCESSES = 1
 DEFAULT_WRITE_INDEX = True
 DEFAULT_WRITE_CHECKSUM_FILES = True
 DEFAULT_LOG_LEVEL = logging.INFO
 DEFAULT_MINIMUM_AGE_DAYS = 0
+
+
+class ReferenceLookupError(KeyError):
+    pass
+
+
+def version_information():
+    cram_archiver_version = f"This is cram-archiver {__version__}."
+    samtools_version_text = subprocess.check_output(["samtools", "--version"],
+                                                    encoding="utf-8")
+    # We do not want the compile information
+    samtools_version_start = samtools_version_text.splitlines()[:2]
+    if (samtools_version_start[0].startswith("samtools") and
+            samtools_version_start[1].startswith("Using")):
+        samtools_version = " ".join(samtools_version_start).lower()
+    else:
+        return cram_archiver_version
+    return cram_archiver_version + f" Which uses {samtools_version}."
 
 
 def convert_to_cram(
@@ -89,8 +110,15 @@ def convert_to_cram_and_check(
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
 ) -> str:
     reference_id = ReferenceID.from_file(input_file)
-    reference = reference_id_to_path[reference_id]
-    output_file = str(Path(input_file).parent / Path(input_file).stem) + ".cram"
+    try:
+        reference = reference_id_to_path[reference_id]
+    except KeyError:
+        raise ReferenceLookupError(
+            f"Could not find reference for {input_file}. Reference ID: "
+            f"{reference_id!r}."
+        )
+    output_file = str(
+        Path(input_file).parent / Path(input_file).stem) + ".cram"
     logging.info(f"Convert '{input_file}' to '{output_file}'.")
     convert_to_cram(input_file, output_file, reference, threads, cram_version,
                     write_index)
@@ -125,64 +153,199 @@ def handle_file_age(file, file_mtime: float, older_than_timestamp: float
         logging.info(f"Skipping too new file: {file}.")
 
 
-def _find_bam_files_dirscan(
+def _find_files_dirscan(
         input_dir: str,
-        older_than_timestamp: float,
         ignore_files: Set[str],
         follow_symlinks: bool,
-):
+) -> Iterator[str]:
     for entry in os.scandir(input_dir):
         if entry.path in ignore_files:
             logging.info(f"Ignoring {entry.path}")
             continue
         logging.debug(f"Searching: {entry.path}")
         if entry.is_file(follow_symlinks=follow_symlinks):
-            if entry.name.endswith(".bam"):
-                yield from handle_file_age(
-                    entry.path, entry.stat().st_mtime, older_than_timestamp)
+            yield entry.path
         elif entry.is_dir(follow_symlinks=follow_symlinks):
-            yield from _find_bam_files_dirscan(
-                entry.path, older_than_timestamp, ignore_files, follow_symlinks)
+            yield from _find_files_dirscan(
+                input_dir=entry.path,
+                ignore_files=ignore_files,
+                follow_symlinks=follow_symlinks
+            )
 
 
 def find_bam_files(
-        input_path: str,
+        input_paths: List[str],
         older_than_timestamp: float = time.time(),
         ignore_files: Optional[Sequence[str]] = None,
+        ignore_extensions: Optional[Sequence[str]] = None,
         follow_symlinks=False,
 ) -> Iterator[str]:
-    # Make input path and ignore files absolute. This also deals with trailing
+    if not isinstance(input_paths, list):
+        # Otherwise a string path might be iterated over: "/whatever/somefile"
+        # starts with "/" so root will be indexed. Not desirable!
+        raise TypeError(f"Input paths should be a list, got {type(input_paths)}")
+    # Make the ignore files absolute. This also deals with trailing
     # slashes for directories and ../ entries.
-    input_path = os.path.abspath(input_path)
     if ignore_files is not None:
         ignore_set = {os.path.abspath(p) for p in ignore_files}
     else:
         ignore_set = set()
-    if input_path in ignore_set:
-        logging.info(f"Ignoring {input_path}")
-        return
-    if os.path.islink(input_path) and not follow_symlinks:
-        return
-    if os.path.isfile(input_path):
-        yield from handle_file_age(
-            input_path, os.path.getmtime(input_path), older_than_timestamp)
-    elif os.path.isdir(input_path):
-        yield from _find_bam_files_dirscan(
-            input_path, older_than_timestamp, ignore_set, follow_symlinks
-        )
+    if ignore_extensions is None:
+        ignore_extensions = tuple()
+    already_found = set()
+
+    for input_path in input_paths:
+        input_path = os.path.abspath(input_path)
+        if input_path in ignore_set:
+            logging.info(f"Ignoring {input_path}")
+            continue
+        if os.path.islink(input_path) and not follow_symlinks:
+            continue
+        if os.path.isdir(input_path):
+            files: Iterable[str] = _find_files_dirscan(
+                input_dir=input_path,
+                ignore_files=ignore_set,
+                follow_symlinks=follow_symlinks
+            )
+        elif os.path.isfile(input_path):
+            files = [input_path]
+        else:
+            continue
+        for file in files:
+            if not file.endswith(".bam"):
+                continue
+            if any(file.endswith(ext) for ext in ignore_extensions):
+                logging.info(f"Ignoring {file}")
+                continue
+            # Do not convert the same BAM file twice if the user has given
+            # multiple paths that resolve to the same BAM file.
+            if file in already_found:
+                logging.warning(f"Skipping duplicate path: {file}.")
+                continue
+            already_found.add(file)
+            if os.path.getmtime(file) < older_than_timestamp:
+                yield file
+            else:
+                logging.info(f"Skipping too new file: {file}.")
+
+
+class CramConverter:
+    def __init__(self,
+                 reference_files: Sequence[str],
+                 threads: int = DEFAULT_THREADS,
+                 processes: int = DEFAULT_PROCESSES,
+                 cram_version: str = DEFAULT_CRAM_VERSION,
+                 write_index: bool = DEFAULT_WRITE_INDEX,
+                 write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
+                 minimum_age_days: int = 0,
+                 delete: bool = False,
+                 dry_run: bool = False,
+                 ):
+        self._processes = processes
+        self.threads = threads
+        self.queue: queue.Queue[str] = queue.Queue()
+        self.total_bam_size: int = 0
+        self.total_cram_size: int = 0
+        self.lock = threading.Lock()
+        self.errors: List[Exception] = []
+        self.ref_dicts: Dict[ReferenceID, str] = {}
+        self.cram_version = cram_version
+        self.write_index = write_index
+        self.write_checksum_files = write_checksum_files
+        self.minimum_age_days = minimum_age_days
+        self.delete = delete
+        self.dry_run = dry_run
+        for reference in reference_files:
+            fai = reference + ".fai"
+            if not os.path.exists(fai):
+                raise FileNotFoundError(
+                    f"Fasta index file for {reference} could not be found.")
+            ref_id = ReferenceID.from_file(fai)
+            self.ref_dicts[ref_id] = reference
+        self.running = False
+        self.workers: List[threading.Thread] = []
+
+    def start(self):
+        self.running = True
+        for _ in range(self._processes):
+            worker = threading.Thread(target=self.worker_func)
+            self.workers.append(worker)
+            worker.start()
+
+    def stop(self):
+        self.running = False
+        for worker in self.workers:
+            worker.join()
+        self.workers = []
+
+    def wait(self):
+        self.queue.join()
+
+    def add(self, bam_file: str):
+        self.queue.put(bam_file)
+
+    def worker_func(self):
+        while self.running:
+            try:
+                bam = self.queue.get(timeout=0.01)
+            except queue.Empty:
+                continue
+            try:
+                # Capture everything in the try block to prevent threads from
+                # hanging on error.
+                bam_name = os.path.basename(bam)
+                bam_size = os.path.getsize(bam)
+                with self.lock:
+                    self.total_bam_size += bam_size
+
+                if self.dry_run:
+                    continue
+
+                cram_file = convert_to_cram_and_check(
+                    input_file=bam,
+                    reference_id_to_path=self.ref_dicts,
+                    threads=self.threads,
+                    cram_version=self.cram_version,
+                    write_index=self.write_index,
+                    write_checksum_files=self.write_checksum_files,
+                )
+                cram_name = os.path.basename(cram_file)
+                cram_size = os.path.getsize(cram_file)
+                with self.lock:
+                    self.total_cram_size += cram_size
+                logging.info(
+                    f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
+                logging.info(
+                    f"{cram_name} size: {cram_size / (1024 ** 3):.2f} GiB")
+                if self.delete:
+                    logging.info(
+                        f"Conversion successful, deleting BAM file: {bam}. Saved "
+                        f"space: {(bam_size - cram_size) / (1024 ** 3):.2f} GiB."
+                    )
+                    os.unlink(bam)
+            # Catch all is intentional. This way the thread can never crash and
+            # cause hanging.
+            except Exception as error:
+                logging.error(f"Conversion unsuccessful: {bam}. {repr(error)}")
+                with self.lock:
+                    self.errors.append(error)
+            finally:
+                self.queue.task_done()
 
 
 def cram_archiver(
-        input_path: str,
+        input_paths: List[str],
         reference_files: Sequence[str],
         threads: int = DEFAULT_THREADS,
+        processes: int = DEFAULT_PROCESSES,
         cram_version: str = DEFAULT_CRAM_VERSION,
         write_index: bool = DEFAULT_WRITE_INDEX,
         write_checksum_files: bool = DEFAULT_WRITE_CHECKSUM_FILES,
         minimum_age_days: int = 0,
         delete: bool = False,
         dry_run: bool = False,
-        ignore_files: Optional[Sequence[str]] = None
+        ignore_files: Optional[Sequence[str]] = None,
+        ignore_extensions: Optional[Sequence[str]] = None,
 ):
     if delete and not dry_run:
         logging.warning(
@@ -199,66 +362,80 @@ def cram_archiver(
         ref_id = ReferenceID.from_file(fai)
         ref_dicts[ref_id] = reference
 
-    bam_files = find_bam_files(input_path, older_than_timestamp, ignore_files)
+    bam_files = find_bam_files(
+        input_paths=input_paths,
+        older_than_timestamp=older_than_timestamp,
+        ignore_files=ignore_files,
+        ignore_extensions=ignore_extensions,
+    )
+
+    cram_converter = CramConverter(
+        reference_files=reference_files,
+        threads=threads,
+        processes=processes,
+        cram_version=cram_version,
+        write_index=write_index,
+        write_checksum_files=write_checksum_files,
+        minimum_age_days=minimum_age_days,
+        delete=delete,
+        dry_run=dry_run,
+    )
     number_of_bam_files = 0
-    errors = []
-    total_bam_size = 0
-    total_cram_size = 0
-    for number_of_bam_files, bam in enumerate(bam_files, start=1):
-        bam_size = os.path.getsize(bam)
-        bam_name = os.path.basename(bam)
-        total_bam_size += bam_size
-        if dry_run:
-            print(bam)
-            continue
-        try:
-            cram_file = convert_to_cram_and_check(
-                input_file=bam,
-                reference_id_to_path=ref_dicts,
-                threads=threads,
-                cram_version=cram_version,
-                write_index=write_index,
-                write_checksum_files=write_checksum_files,
-            )
-            cram_name = os.path.basename(cram_file)
-            cram_size = os.path.getsize(cram_file)
-            total_cram_size += cram_size
-            logging.info(f"{bam_name} size: {bam_size / (1024 ** 3):.2f} GiB")
-            logging.info(f"{cram_name} size: {cram_size / (1024 ** 3):.2f} GiB")
-            if delete:
-                logging.info(
-                    f"Conversion successful, deleting BAM file: {bam}. Saved "
-                    f"space: {(bam_size - cram_size) / (1024 ** 3):.2f} GiB."
-                )
-                os.unlink(bam)
-        except (FileNotFoundError, RuntimeError) as error:
-            logging.error(f"Conversion unsuccessful: {bam}. {str(error)}")
-            errors.append(error)
+    cram_converter.start()
+    try:
+        for number_of_bam_files, bam in enumerate(bam_files, start=1):
+            cram_converter.add(bam)
+            if dry_run:
+                print(bam)
+        cram_converter.wait()
+    finally:
+        cram_converter.stop()
+
     if number_of_bam_files == 0:
         logging.warning("No BAM files found. Exiting.")
-    else:
+        return
+
+    total_bam_size = cram_converter.total_bam_size
+    total_cram_size = cram_converter.total_cram_size
+
+    logging.info(
+        f"Found {number_of_bam_files} BAM files of "
+        f"total: {total_bam_size / (1024 ** 3):.2f} GiB.")
+    if not dry_run:
         logging.info(
-            f"Found {number_of_bam_files} BAM files of "
-            f"total: {total_bam_size / (1024 ** 3):.2f} GiB.")
-        if not dry_run:
+            f"Total generated CRAM size: "
+            f"{total_cram_size / (1024 ** 3):.2f} GiB.")
+        if delete:
             logging.info(
-                f"Total generated CRAM size: "
-                f"{total_cram_size / (1024 ** 3):.2f} GiB.")
-            if delete:
-                logging.info(
-                    f"Total saved size: "
-                    f"{(total_bam_size - total_cram_size) / (1024 ** 3):.2f} "
-                    f"GiB."
-                )
-    if errors:
+                f"Total saved size: "
+                f"{(total_bam_size - total_cram_size) / (1024 ** 3):.2f} "
+                f"GiB."
+            )
+    if cram_converter.errors:
         raise RuntimeError("Errors occurred during conversions.")
+
+
+def parse_exclude_file(exclude_file: str) -> Iterator[str]:
+    exclude_file_parent = os.path.abspath(os.path.dirname(exclude_file))
+    with open(exclude_file, "rt") as f:
+        for line in f:
+            line = line.strip()
+            path, *comments = line.split("#")
+            path = path.strip()
+            if path == "":  # Ignore empty lines, lines with only comments
+                continue
+            if os.path.isabs(path):
+                yield path
+            else:
+                yield os.path.join(exclude_file_parent, path)
 
 
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "path", metavar="PATH",
-        help="Path to BAM file or directory to be recursively searched."
+        "path", metavar="PATH", nargs="+",
+        help="Path to BAM file or directory to be recursively searched. "
+             "Multiple paths can be given."
     )
     parser.add_argument(
         "-r", "--reference", action="append", required=True,
@@ -267,8 +444,16 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-t", "--threads", type=int, default=DEFAULT_THREADS,
-        help=f"The number of threads used for conversion and checksumming."
+        help=f"The number of threads used by samtools for conversion and "
+             f"checksumming. "
              f"Default: {DEFAULT_THREADS}."
+    )
+    parser.add_argument(
+        "-p", "--processes", type=int, default=DEFAULT_PROCESSES,
+        help=f"The number of parallel samtools processes that are used. "
+             f"Multiply this with number of threads to get the number of used "
+             f"CPU cores. "
+             f"Default: {DEFAULT_PROCESSES}."
     )
     parser.add_argument(
         "-d", "--minimum-age-days", type=int,
@@ -295,7 +480,16 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--exclude-list", metavar="PATH",
         help="Supply a newline-separated file with files and directories to "
-             "exclude."
+             "exclude. Comments can be included with '#'. Empty lines are "
+             "ignored. Relative paths are resolved relative to the exclude "
+             "list file itself."
+    )
+    parser.add_argument(
+        "--exclude-extension", metavar="EXTENSION",
+        action="append",
+        help="Exclude files with this extension from conversion. For example "
+             "'.repeats.bam' for DRAGEN-generated repeats BAM files. "
+             "Can be supplied multiple times."
     )
     parser.add_argument(
         "--dont-write-checksums", action="store_false", dest="write_checksums",
@@ -318,7 +512,7 @@ def argument_parser() -> argparse.ArgumentParser:
         help="Display less logging information."
     )
     parser.add_argument(
-        "--version", action="version", version=__version__
+        "--version", action="version", version=version_information()
     )
     return parser
 
@@ -342,13 +536,15 @@ def cram_archiver_main(*args):
     else:
         exclude_list = []
     if arg.exclude_list is not None:
-        with open(arg.exclude_list, "rt") as f:
-            exclude_list.extend(f.read().splitlines(keepends=False))
+        for exclude_item in parse_exclude_file(arg.exclude_list):
+            exclude_list.append(exclude_item)
+    logging.debug(f"Files to exclude: {exclude_list}")
 
     cram_archiver(
-        input_path=arg.path,
+        input_paths=arg.path,
         reference_files=arg.reference,
         threads=arg.threads,
+        processes=arg.processes,
         cram_version=arg.cram_version,
         write_index=arg.write_index,
         write_checksum_files=arg.write_checksums,
@@ -356,4 +552,5 @@ def cram_archiver_main(*args):
         delete=arg.delete,
         dry_run=arg.dry_run,
         ignore_files=exclude_list,
+        ignore_extensions=arg.exclude_extension,
     )

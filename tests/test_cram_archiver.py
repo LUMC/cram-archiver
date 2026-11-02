@@ -29,6 +29,7 @@ from cram_archiver import (
     cram_archiver_main,
     find_bam_files,
     handle_file_age,
+    parse_exclude_file,
     strip_comments_from_checksum,
 )
 from cram_archiver.references import ReferenceID
@@ -51,9 +52,9 @@ def test_checksum():
     sum = checksum(bam, str(TEST_DATA / "NC012920.1.fasta"))
     checksum_expected = (
         "all        all           178  06d90a04  526c1585  3e8f585f  "
-        "41c54f43  268b6cbb  1ff11ae8  35f542f6  56a9ac23\n"
+        "41c54f43  268b6cbb  1ff11ae8  3ea7f7fe  7595cdcf\n"
         "GM24385_fastq-lib1-fastq all           178  06d90a04  526c1585  "
-        "3e8f585f  41c54f43  268b6cbb  1ff11ae8  35f542f6  56a9ac23\n"
+        "3e8f585f  41c54f43  268b6cbb  1ff11ae8  3ea7f7fe  7595cdcf\n"
     )
     assert checksum_expected in sum
     assert checksum_expected == strip_comments_from_checksum(sum)
@@ -70,7 +71,7 @@ def test_convert_to_cram(tmp_path):
 
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files"],
-    itertools.product(["3.0", "3.1"], [True, False], [True, False])
+    list(itertools.product(["3.0", "3.1"], [True, False], [True, False]))
 )
 def test_convert_to_cram_and_check(
         tmp_path, caplog, cram_version, write_index, write_checksum_files):
@@ -140,7 +141,7 @@ def test_find_bam_files(tmp_path, caplog, debug):
     os.utime(bam1, (1000, 300))
     os.utime(bam2, (1000, 200))
     os.utime(bam3, (1000, 100))
-    result = list(find_bam_files(str(tmp_path), older_than_timestamp=201))
+    result = list(find_bam_files([str(tmp_path)], older_than_timestamp=201))
     assert set(result) == {str(bam2), str(bam3)}
     assert str(bam1) in caplog.text
     assert (str(bam2) in caplog.text) is debug
@@ -174,7 +175,9 @@ def test_find_bam_files_no_symlinks(tmp_path, caplog, debug):
     os.utime(bam1, (1000, 300))
     os.utime(bam2, (1000, 200))
     os.utime(bam3, (1000, 100))
-    result = list(find_bam_files(str(tmp_path), older_than_timestamp=201))
+    result = list(find_bam_files(
+        [str(bam1_link), str(tmp_path)],
+        older_than_timestamp=201))
     assert set(result) == {str(bam2), str(bam3)}
     assert str(bam1) in caplog.text
     assert (str(bam2) in caplog.text) is debug
@@ -202,7 +205,7 @@ def test_find_bam_files_exclude(tmp_path: Path, caplog, debug):
     decoy1.touch()
     decoy2.touch()
     result = list(find_bam_files(
-        str(tmp_path),
+        [str(tmp_path)],
         # Make the timestamp very big to avoid testing issues.
         older_than_timestamp=math.inf,
         ignore_files=[str(bam1.absolute())]
@@ -216,15 +219,92 @@ def test_find_bam_files_exclude(tmp_path: Path, caplog, debug):
     assert (str(decoy2) in caplog.text) is debug
 
 
+@pytest.mark.parametrize("debug", [True, False])
+def test_find_bam_files_exclude_ext(tmp_path: Path, caplog, debug):
+    if debug:
+        caplog.set_level(logging.DEBUG)
+    else:
+        caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1_repeats = tmp_path / "bam1.repeats.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    bam1_repeats.touch()
+    bam2.touch()
+    bam3.touch()
+    decoy1.touch()
+    decoy2.touch()
+    result = list(find_bam_files(
+        [str(tmp_path)],
+        # Make the timestamp very big to avoid testing issues.
+        older_than_timestamp=math.inf,
+        ignore_extensions=[".repeats.bam"]
+    ))
+    assert set(result) == {str(bam2), str(bam3)}
+    assert str(bam1_repeats) in caplog.text
+    assert "Ignoring" in caplog.text
+    assert (str(bam2) in caplog.text) is debug
+    assert (str(bam3) in caplog.text) is debug
+    assert (str(decoy1) in caplog.text) is debug
+    assert (str(decoy2) in caplog.text) is debug
+
+
+def test_find_bam_files_multiple_paths(tmp_path: Path, caplog):
+    caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    bam1.touch()
+    bam2.touch()
+    bam3.touch()
+    decoy1.touch()
+    decoy2.touch()
+    result = list(find_bam_files(
+        [str(bam1), str(tmp_path), str(bam3)],
+        # Make the timestamp very big to avoid testing issues.
+        older_than_timestamp=math.inf,
+        ignore_files=[str(bam1)]
+    ))
+    result.sort()
+    assert result == [str(bam2), str(bam3)]
+    assert str(bam1) in caplog.text
+    assert "Ignoring" in caplog.text
+    assert "WARNING" in caplog.text
+    assert f"Skipping duplicate path: {str(bam3)}" in caplog.text
+
+
+def test_find_bam_files_crash_on_string(tmp_path):
+    bam1 = tmp_path / "bam1.bam"
+    bam1.touch()
+    with pytest.raises(TypeError):
+        list(find_bam_files(str(tmp_path)))  # type: ignore
+
+
+def test_find_bam_files_skip_non_file(tmp_path):
+    fifo_bam = tmp_path / "fifo.bam"
+    os.mkfifo(fifo_bam)
+    assert [] == list(find_bam_files([str(fifo_bam)]))
+
+
 @pytest.mark.parametrize(
-    ["cram_version", "write_index", "write_checksum_files", "delete", "use_cli"],
-    itertools.product(
+    ["cram_version", "write_index", "write_checksum_files", "delete",
+     "use_cli", "ignore_extensions", "processes"],
+    list(itertools.product(
         ["3.0", "3.1"],
         [True, False],
         [True, False],
         [True, False],
         [True, False],
-    )
+        [[], [".repeats.bam"]],
+        [1, 4]
+    ))
 )
 def test_cram_archiver(
         cram_version,
@@ -233,34 +313,43 @@ def test_cram_archiver(
         delete,
         use_cli,
         tmp_path,
+        processes,
+        ignore_extensions,
         caplog,
 ):
     caplog.set_level(logging.INFO)
     subdir = tmp_path / "subdir"
     subdir.mkdir()
+    bam1_repeats = tmp_path / "bam1.repeats.bam"
     bam1 = tmp_path / "bam1.bam"
     bam2 = tmp_path / "bam2.bam"
     bam3 = subdir / "bam3.bam"
+    cram1_repeats = tmp_path / "bam1.repeats.cram"
     cram1 = tmp_path / "bam1.cram"
     cram2 = tmp_path / "bam2.cram"
     cram3 = subdir / "bam3.cram"
+    bam1_repeats_checksum = tmp_path / "bam1.repeats.bam.checksum"
     bam1_checksum = tmp_path / "bam1.bam.checksum"
     bam2_checksum = tmp_path / "bam2.bam.checksum"
     bam3_checksum = subdir / "bam3.bam.checksum"
+    cram1_repeats_checksum = tmp_path / "bam1.repeats.cram.checksum"
     cram1_checksum = tmp_path / "bam1.cram.checksum"
     cram2_checksum = tmp_path / "bam2.cram.checksum"
     cram3_checksum = subdir / "bam3.cram.checksum"
+    cram1_repeats_index = tmp_path / "bam1.repeats.cram.crai"
     cram1_index = tmp_path / "bam1.cram.crai"
     cram2_index = tmp_path / "bam2.cram.crai"
     cram3_index = subdir / "bam3.cram.crai"
     decoy1 = subdir / "decoy1.txt"
     decoy2 = tmp_path / "decoy2.txt"
+    shutil.copy(TEST_DATA / "GM24385_1.repeats.bam", bam1_repeats)
     shutil.copy(TEST_DATA / "GM24385_1.bam", bam1)
     shutil.copy(TEST_DATA / "GM24385_1.bam", bam2)
     shutil.copy(TEST_DATA / "GM24385_1.bam", bam3)
     decoy1.touch()
     decoy2.touch()
     current_time = time.time()
+    os.utime(bam1_repeats, (current_time, current_time - 100_000))  # More than 1 day
     os.utime(bam1, (current_time, current_time - 10_000))
     os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
     os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
@@ -269,6 +358,7 @@ def test_cram_archiver(
             str(tmp_path),
             "--reference", str(TEST_DATA / "NC012920.1.fasta"),
             "--cram-version", cram_version,
+            "--processes", str(processes),
             "-vvvv",
             "--minimum-age-days", "1"
         ]
@@ -278,16 +368,21 @@ def test_cram_archiver(
             args.append("--dont-write-checksums")
         if delete:
             args.append("--delete")
+        for ext in ignore_extensions:
+            args.append("--exclude-extension")
+            args.append(ext)
         cram_archiver_main(*args)
     else:
         cram_archiver(
-            input_path=str(tmp_path),
+            input_paths=[str(tmp_path)],
             reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
             cram_version=cram_version,
             write_index=write_index,
             write_checksum_files=write_checksum_files,
             minimum_age_days=1,
             delete=delete,
+            processes=processes,
+            ignore_extensions=ignore_extensions
         )
     assert ("WILL BE DELETED" in caplog.text) is delete
     assert (f"deleting BAM file: {bam2}" in caplog.text) is delete
@@ -299,6 +394,20 @@ def test_cram_archiver(
     assert not cram1_index.exists()
     assert not bam1_checksum.exists()
     assert not cram1_checksum.exists()
+    if ignore_extensions:
+        assert bam1_repeats.exists()
+        assert not cram1_repeats.exists()
+        assert not cram1_repeats_index.exists()
+        assert not cram1_repeats_checksum.exists()
+        assert not bam1_repeats_checksum.exists()
+        assert "Found 2 BAM files" in caplog.text
+    else:
+        assert bam1_repeats.exists() is not delete
+        assert cram1_repeats.exists()
+        assert cram1_repeats_index.exists() is write_index
+        assert cram1_repeats_checksum.exists() is write_checksum_files
+        assert bam1_repeats_checksum.exists() is write_checksum_files
+        assert "Found 3 BAM files" in caplog.text
     assert cram2.exists()
     assert get_file_cram_version(str(cram2)) == cram_version
     assert cram2_index.exists() is write_index
@@ -310,19 +419,18 @@ def test_cram_archiver(
     assert bam3_checksum.exists() is write_checksum_files
     assert cram3_checksum.exists() is write_checksum_files
     assert ("Total saved size" in caplog.text) is delete
-    assert "Found 2 BAM files" in caplog.text
     assert "Total generated CRAM size" in caplog.text
 
 
 @pytest.mark.parametrize(
     ["cram_version", "write_index", "write_checksum_files", "delete", "use_cli"],
-    itertools.product(
+    list(itertools.product(
         ["3.0", "3.1"],
         [True, False],
         [True, False],
         [True, False],
         [True, False],
-    )
+    ))
 )
 def test_cram_archiver_single_file(
         cram_version,
@@ -358,7 +466,7 @@ def test_cram_archiver_single_file(
         cram_archiver_main(*args)
     else:
         cram_archiver(
-            input_path=str(bam),
+            input_paths=[str(bam)],
             reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
             cram_version=cram_version,
             write_index=write_index,
@@ -376,9 +484,9 @@ def test_cram_archiver_single_file(
 
 @pytest.mark.parametrize(
     ["delete", "write_checksum_files", "write_index"],
-    itertools.product(
+    list(itertools.product(
         [True, False], [True, False], [True, False]
-    )
+    ))
 )
 def test_cram_archiver_dry_run(tmp_path, capsys, delete,
                                write_checksum_files,
@@ -396,7 +504,7 @@ def test_cram_archiver_dry_run(tmp_path, capsys, delete,
     os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
     os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
     cram_archiver(
-        input_path=str(tmp_path),
+        input_paths=[str(tmp_path)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         minimum_age_days=1,
         dry_run=True,
@@ -421,7 +529,7 @@ def test_cram_archiver_dry_run_exclude_files(tmp_path, capsys):
     bam2.touch()
     bam3.touch()
     cram_archiver(
-        input_path=str(tmp_path),
+        input_paths=[str(tmp_path)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         dry_run=True,
         ignore_files=[str(bam1), str(bam3)],
@@ -443,7 +551,7 @@ def test_cram_archiver_dry_run_root_dir_excluded(tmp_path, capsys):
     bam2.touch()
     bam3.touch()
     cram_archiver(
-        input_path=str(tmp_path),
+        input_paths=[str(tmp_path)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         dry_run=True,
         ignore_files=[str(tmp_path)],
@@ -460,7 +568,7 @@ def test_cram_archiver_dry_run_root_file_excluded(tmp_path, capsys):
     bam1 = tmp_path / "bam1.bam"
     bam1.touch()
     cram_archiver(
-        input_path=str(bam1),
+        input_paths=[str(bam1)],
         reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
         dry_run=True,
         ignore_files=[str(bam1)],
@@ -530,5 +638,112 @@ def test_cram_archiver_no_reference_fai(tmp_path):
 
 
 def test_cram_archiver_no_bam_files(tmp_path, caplog):
-    cram_archiver(str(tmp_path), [str(TEST_DATA / "NC012920.1.fasta")])
+    cram_archiver([str(tmp_path)], [str(TEST_DATA / "NC012920.1.fasta")])
     assert "No BAM files found." in caplog.text
+
+
+def test_cram_archiver_fails_gracefully(
+        tmp_path,
+        caplog,
+):
+    """Check if the process keeps continuing until the end while finding
+    mistakes."""
+    cram_version = "3.0"
+    caplog.set_level(logging.INFO)
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    bam0 = tmp_path / "bam0.bam"
+    bam1 = tmp_path / "bam1.bam"
+    bam2 = tmp_path / "bam2.bam"
+    bam3 = subdir / "bam3.bam"
+    cram0 = tmp_path / "bam0.cram"
+    cram1 = tmp_path / "bam1.cram"
+    cram2 = tmp_path / "bam2.cram"
+    cram3 = subdir / "bam3.cram"
+    bam0_checksum = tmp_path / "bam0.bam.checksum"
+    bam1_checksum = tmp_path / "bam1.bam.checksum"
+    bam2_checksum = tmp_path / "bam2.bam.checksum"
+    bam3_checksum = subdir / "bam3.bam.checksum"
+    cram0_checksum = tmp_path / "bam0.cram.checksum"
+    cram1_checksum = tmp_path / "bam1.cram.checksum"
+    cram2_checksum = tmp_path / "bam2.cram.checksum"
+    cram3_checksum = subdir / "bam3.cram.checksum"
+    cram0_index = tmp_path / "bam0.cram.crai"
+    cram1_index = tmp_path / "bam1.cram.crai"
+    cram2_index = tmp_path / "bam2.cram.crai"
+    cram3_index = subdir / "bam3.cram.crai"
+    decoy1 = subdir / "decoy1.txt"
+    decoy2 = tmp_path / "decoy2.txt"
+    shutil.copy(TEST_DATA / "GM24385_1_unknown_reference.bam", bam0)
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam1)
+    # bam2 will be corrupted because not a bam.
+    shutil.copy(TEST_DATA / "NC012920.1.fasta", bam2)
+    shutil.copy(TEST_DATA / "GM24385_1.bam", bam3)
+    decoy1.touch()
+    decoy2.touch()
+    current_time = time.time()
+    os.utime(bam0, (current_time, current_time - 10_000))
+    os.utime(bam1, (current_time, current_time - 10_000))
+    os.utime(bam2, (current_time, current_time - 100_000))  # More than 1 day
+    os.utime(bam3, (current_time, current_time - 200_000))  # More than 2 days
+    with pytest.raises(RuntimeError) as error:
+        cram_archiver(
+            input_paths=[str(tmp_path)],
+            reference_files=[str(TEST_DATA / "NC012920.1.fasta")],
+            cram_version=cram_version,
+            write_index=True,
+            write_checksum_files=True,
+            minimum_age_days=0,
+            delete=True,
+        )
+    assert "Errors occurred during conversions" in str(error)
+    assert ("WILL BE DELETED" in caplog.text)
+    assert (f"deleting BAM file: {bam1}" in caplog.text)
+    assert (f"deleting BAM file: {bam3}" in caplog.text)
+    assert bam0.exists()
+    assert not bam1.exists()
+    assert bam2.exists()
+    assert not bam3.exists()
+    assert not cram0.exists()
+    assert not cram0_index.exists()
+    assert not bam0_checksum.exists()
+    assert not cram0_checksum.exists()
+    assert cram1.exists()
+    assert cram1_index.exists()
+    assert bam1_checksum.exists()
+    assert cram1_checksum.exists()
+    assert get_file_cram_version(str(cram1)) == cram_version
+    assert not cram2.exists()  # Should have failed
+    assert not cram2_index.exists()
+    assert not bam2_checksum.exists()
+    assert not cram2_checksum.exists()
+    assert cram3.exists()
+    assert get_file_cram_version(str(cram3)) == cram_version
+    assert cram3_index.exists()
+    assert bam3_checksum.exists()
+    assert cram3_checksum.exists()
+    assert ("Total saved size" in caplog.text)
+    assert "Found 4 BAM files" in caplog.text
+    assert "Total generated CRAM size" in caplog.text
+
+
+def test_parse_exclude_file(tmp_path):
+    file_to_ignore_absolute = "/a/b/c"
+    file_to_ignore_relative = "b/c"
+    comment = "# Comment dit on?"
+    empty_line = ""
+    file_to_ignore_relative_with_comment = "b/d  # Ou est la gare?"
+    with open(tmp_path / "exclude.txt", "wt") as f:
+        f.write(f"{file_to_ignore_absolute}\n"
+                f"{file_to_ignore_relative}\n"
+                f"{comment}\n"
+                f"{empty_line}\n"
+                f"{file_to_ignore_relative_with_comment}\n"
+                f"{empty_line}\n"
+                )
+    exclude_files = set(parse_exclude_file(str(tmp_path / "exclude.txt")))
+    assert exclude_files == {
+        file_to_ignore_absolute,
+        os.path.join(tmp_path, file_to_ignore_relative),
+        os.path.join(tmp_path, file_to_ignore_relative_with_comment[:3])
+    }

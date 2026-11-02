@@ -1,5 +1,5 @@
 Release checklist
-- [ ] Check outstanding issues on JIRA and GitHub.
+- [ ] Check outstanding issues on GitHub.
 - [ ] Check README looks fine.
 - [ ] Create a release branch.
   - [ ] Change current development version in `CHANGELOG.rst` to stable version.

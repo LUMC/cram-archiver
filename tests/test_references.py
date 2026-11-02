@@ -119,6 +119,7 @@ def test_reference_id_init():
     TEST_DATA / "empty.cram",
     TEST_DATA / "empty.bam",
     TEST_DATA / "ucsc.hg19_nohap.fasta.fai",
+    TEST_DATA / "empty.repeats.bam",
 ])
 def test_reference_id_from_file(file):
     assert ReferenceID.from_file(str(file)) == ReferenceID(TEST_REFERENCE_ID_STRING)
@@ -127,3 +128,9 @@ def test_reference_id_from_file(file):
 def test_reference_id_mt():
     assert (ReferenceID.from_file(str(TEST_DATA / "GM24385_1.bam")) ==
             ReferenceID.from_file(str(TEST_DATA / "NC012920.1.fasta.fai")))
+
+
+def test_reference_id_repr():
+    ref = ReferenceID(TEST_REFERENCE_ID_STRING)
+    assert repr(ref) == (f"{repr(TEST_REFERENCE_ID_STRING[:50])}[...]"
+                         f"{repr(TEST_REFERENCE_ID_STRING[-50:])}")

@@ -20,7 +20,6 @@ application.
 """
 import gzip
 import io
-import struct
 import subprocess
 import sys
 from typing import TextIO
@@ -53,6 +52,13 @@ class ReferenceID:
     def id(self) -> str:
         return self._id
 
+    def __repr__(self) -> str:
+        if len(self._id) <= 105:
+            return repr(self._id)
+        first_part = repr(self._id[:50])
+        last_part = repr(self._id[-50:])
+        return f"{first_part}[...]{last_part}"
+
     @classmethod
     def from_file(cls, file: str):
         """
@@ -70,12 +76,7 @@ class ReferenceID:
             elif magic.startswith(b"@HD"):
                 return cls._from_sam_header(text_handle)
             elif magic.startswith(b"BAM\x01"):
-                # Skip magic 4 bytes. The following 4 bytes are the length of
-                # the header in plaintext.
-                l_text, = struct.unpack("<xxxxI", filehandle.read(8))
-                # Only ASCII is allowed in the SAM/BAM header.
-                text = filehandle.read(l_text).decode("ascii")
-                return cls._from_sam_header(io.StringIO(text))
+                return cls._from_alignment_file(file)
             # FAI detection
             first_line = magic.splitlines()[0]
             if first_line.count(b"\t") == 4:
