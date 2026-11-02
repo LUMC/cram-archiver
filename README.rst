@@ -71,7 +71,9 @@ Versions of ``samtools checksum`` before 1.24 incorrectly calculated the mate
 checksum. In 1.24 this was fixed, but without incrementing the checksum version
 number, which was still printed as 1.0. This was fixed in 1.25 where the
 checksum number was increased to 2.0. This is something to be aware of when
-evaluating checksums that have been made by cram-archiver in the past.
+evaluating checksums that have been made by cram-archiver in the past. For
+more information check the `corresponding samtools issue
+<https://github.com/samtools/samtools/issues/2354>`_.
 
 Quickstart
 ==========
