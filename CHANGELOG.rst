@@ -7,7 +7,7 @@ Changelog
 .. This document is user facing. Please word the changes in such a way
 .. that users understand how the changes affect the new version.
 
-develop
+1.2.0
 ------------------
 + ``cram-archiver --version`` now starts with "This is cram-archiver" then
   states its version and afterwards states the versions of samtools and htslib
